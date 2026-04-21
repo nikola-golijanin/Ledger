@@ -64,6 +64,8 @@ public class Transaction
     public string? ExternalRef { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    
+    public SepaType? SepaType { get; set; }  // nullable: only meaningful for deposits/withdrawals
 
     public ICollection<JournalEntry> Entries { get; set; } = new List<JournalEntry>();
 }
@@ -82,4 +84,10 @@ public class JournalEntry
     public Account Account { get; set; } = default!;
 
     public decimal SignedAmount => Direction * Amount;
+}
+
+public enum SepaType
+{
+    Standard = 1,
+    Instant = 2
 }

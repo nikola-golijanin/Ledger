@@ -1,5 +1,6 @@
 @Ledger_HostAddress = http://localhost:5144
 
+
 GET {{Ledger_HostAddress}}/weatherforecast/
 Accept: application/json
 
@@ -50,3 +51,17 @@ Content-Type: application/json
 GET {{Ledger_HostAddress}}/api/withdrawals/11111111-1111-1111-1111-111111111111
 Content-Type: application/json
 
+
+###
+
+# Create an instant SEPA withdrawal that will get stuck
+POST {{Ledger_HostAddress}}/api/withdrawals/faulty
+Content-Type: application/json
+
+{
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Test",
+  "amount": 50.00,
+  "sepaType": 2
+}

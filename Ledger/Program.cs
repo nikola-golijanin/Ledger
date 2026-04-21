@@ -21,6 +21,9 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
 
 builder.Services.AddSingleton<IMockBank, MockBank>();
 builder.Services.AddHostedService<BankStatementPollingJob>();
+builder.Services.AddHostedService<StuckWithdrawalDetectorJob>();
+builder.Services.AddHostedService<ReconciliationJob>();
+
 
 
 var app = builder.Build();

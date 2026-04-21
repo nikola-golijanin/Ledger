@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Ledger.Jobs;
 
-public class BankStatementPollingJob : BackgroundService
+public partial class BankStatementPollingJob : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
@@ -62,7 +62,7 @@ public class BankStatementPollingJob : BackgroundService
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to process statement entry {EntryId}", entry.Id);
+                LogFailedToProcessStatementEntryEntryid(entry.Id, ex);
             }
         }
     }
@@ -101,7 +101,7 @@ public class BankStatementPollingJob : BackgroundService
         tx.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        _logger.LogInformation("Withdrawal {TxId} settled", tx.Id);
+        LogWithdrawalTxidSettled(tx.Id);
     }
 
     private async Task HandleIncoming(LedgerDbContext db, BankStatementEntry entry, CancellationToken ct)
@@ -129,6 +129,15 @@ public class BankStatementPollingJob : BackgroundService
         db.Transactions.Add(tx);
         await db.SaveChangesAsync(ct);
 
-        _logger.LogInformation("Deposit {TxId} booked from statement entry {EntryId}", tx.Id, entry.Id);
+        LogDepositTxidBookedFromStatementEntryEntryid(tx.Id, entry.Id);
     }
+
+    [LoggerMessage(LogLevel.Information, "Deposit {TxId} booked from statement entry {EntryId}")]
+    partial void LogDepositTxidBookedFromStatementEntryEntryid(Guid txId, Guid entryId);
+
+    [LoggerMessage(LogLevel.Error, "Failed to process statement entry {EntryId}")]
+    partial void LogFailedToProcessStatementEntryEntryid(Guid entryId, Exception exception);
+
+    [LoggerMessage(LogLevel.Information, "Withdrawal {TxId} settled")]
+    partial void LogWithdrawalTxidSettled(Guid txId);
 }

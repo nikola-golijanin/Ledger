@@ -98,6 +98,11 @@ public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
             .WithOne(e => e.Transaction)
             .HasForeignKey(e => e.TransactionId)
             .OnDelete(DeleteBehavior.Restrict);
+        
+        builder.Property(t => t.SepaType)
+            .HasColumnName("sepa_type")
+            .HasConversion<string>()
+            .HasMaxLength(16);
 
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.CustomerId);

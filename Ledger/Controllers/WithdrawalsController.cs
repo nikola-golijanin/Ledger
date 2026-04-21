@@ -28,7 +28,8 @@ public class WithdrawalsController : ControllerBase
         Guid CustomerId,
         string CustomerIban,
         string CustomerName,
-        decimal Amount);
+        decimal Amount,
+        SepaType SepaType);
 
     public record WithdrawalResponse(
         Guid TransactionId,
@@ -51,7 +52,7 @@ public class WithdrawalsController : ControllerBase
         var signedSum = await _db.JournalEntries
             .Where(e => e.AccountNumber == AccountNumbers.CustomerViban
                         && e.CustomerId == request.CustomerId)
-            .SumAsync(e => (decimal)e.Direction * e.Amount, ct);
+            .SumAsync(e => e.Direction * e.Amount, ct);
 
         var available = -signedSum;
 
@@ -95,5 +96,48 @@ public class WithdrawalsController : ControllerBase
                         && e.CustomerId == customerId)
             .SumAsync(e => e.Direction * e.Amount, ct);
         return Ok(-signed);
+    }
+
+
+    public record CreateFaultyWithdrawalRequest(
+        Guid CustomerId,
+        decimal Amount,
+        SepaType SepaType);
+
+    /// <summary>
+    /// Simulates a crash between DB commit and bank submission.
+    /// Journal entries are booked, but the bank is never told.
+    /// The transaction will sit in Processing forever until the reconciliation job flags it.
+    /// </summary>
+    [HttpPost("faulty")]
+    public async Task<ActionResult<WithdrawalResponse>> CreateFaulty(
+        [FromBody] CreateFaultyWithdrawalRequest request,
+        CancellationToken ct)
+    {
+        if (request.Amount <= 0)
+            return BadRequest("Amount must be positive.");
+
+        var tx = new Transaction
+        {
+            Id = Guid.NewGuid(),
+            Type = TransactionType.Withdrawal,
+            Status = TransactionStatus.Processing,
+            CustomerId = request.CustomerId,
+            Amount = request.Amount,
+            Currency = "EUR",
+            SepaType = request.SepaType,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        tx.ExternalRef = tx.Id.ToString();
+
+        foreach (var entry in JournalEntryFactory.WithdrawalToProcessing(tx))
+            tx.Entries.Add(entry);
+
+        _db.Transactions.Add(tx);
+        await _db.SaveChangesAsync(ct);
+
+        // DELIBERATELY NOT calling _bank.SubmitWithdrawal — simulates the crash
+        return Ok(new WithdrawalResponse(tx.Id, tx.Status));
     }
 }
