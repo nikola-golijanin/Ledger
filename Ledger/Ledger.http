@@ -1,0 +1,52 @@
+@Ledger_HostAddress = http://localhost:5144
+
+GET {{Ledger_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
+
+# curl -X POST http://localhost:5000/api/testing/inject-deposit 
+#  -H "Content-Type: application/json" 
+#  -d '{
+#    "customerIban": "DE89370400440532013000",
+#    "customerName": "Alice Test",
+#    "amount": 100.00,
+#    "reference": "Salary"
+#  }'
+POST {{Ledger_HostAddress}}/api/testing/inject-deposit
+Content-Type: application/json
+
+{
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Test",
+  "amount": 100.00,
+  "reference": "Salary"
+}
+
+###
+
+
+# curl -X POST http://localhost:5000/api/withdrawals 
+#  -H "Content-Type: application/json" 
+#  -d '{
+#    "customerId": "11111111-1111-1111-1111-111111111111",
+#    "customerIban": "DE89370400440532013000",
+#    "customerName": "Alice Test",
+#    "amount": 50.00
+#  }'
+POST {{Ledger_HostAddress}}/api/withdrawals
+Content-Type: application/json
+
+{
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Test",
+  "amount": 150.00
+}
+
+###
+
+GET {{Ledger_HostAddress}}/api/withdrawals/11111111-1111-1111-1111-111111111111
+Content-Type: application/json
+
