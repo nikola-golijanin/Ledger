@@ -1,4 +1,5 @@
 using Ledger.Banking;
+using Ledger.Customers;
 using Ledger.Infrastructure;
 using Ledger.Jobs;
 using Microsoft.EntityFrameworkCore;
@@ -20,8 +21,10 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
         npgsql.MigrationsHistoryTable("__ef_migrations_history", "ledger")));
 
 builder.Services.AddSingleton<IMockBank, MockBank>();
+builder.Services.AddSingleton<ICustomerRegistry, CustomerRegistry>();
+
 builder.Services.AddHostedService<BankStatementPollingJob>();
-builder.Services.AddHostedService<StuckWithdrawalDetectorJob>();
+builder.Services.AddHostedService<SuspenseAgingMonitor>();
 builder.Services.AddHostedService<ReconciliationJob>();
 
 

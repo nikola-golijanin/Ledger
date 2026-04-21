@@ -104,6 +104,26 @@ public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
             .HasConversion<string>()
             .HasMaxLength(16);
 
+        builder.Property(t => t.CounterpartyIban)
+            .HasColumnName("counterparty_iban")
+            .HasMaxLength(64);
+
+        builder.Property(t => t.CounterpartyName)
+            .HasColumnName("counterparty_name")
+            .HasMaxLength(128);
+
+        builder.Property(t => t.ReviewReason)
+            .HasColumnName("review_reason")
+            .HasConversion<string>()
+            .HasMaxLength(32);
+
+        builder.Property(t => t.ReviewedAt)
+            .HasColumnName("reviewed_at");
+
+        builder.Property(t => t.ReviewedBy)
+            .HasColumnName("reviewed_by")
+            .HasMaxLength(128);
+        
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.CustomerId);
         builder.HasIndex(t => t.ExternalRef);

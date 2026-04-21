@@ -1,4 +1,5 @@
 ﻿using Ledger.Banking;
+using Ledger.Customers;
 using Ledger.Domain;
 using Ledger.Infrastructure;
 using Ledger.Ledger;
@@ -6,21 +7,24 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Ledger.Jobs;
 
-public partial class BankStatementPollingJob : BackgroundService
+public class BankStatementPollingJob : BackgroundService
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
 
     private readonly IServiceProvider _services;
     private readonly IMockBank _bank;
+    private readonly ICustomerRegistry _customers;
     private readonly ILogger<BankStatementPollingJob> _logger;
 
     public BankStatementPollingJob(
         IServiceProvider services,
         IMockBank bank,
+        ICustomerRegistry customers,
         ILogger<BankStatementPollingJob> logger)
     {
         _services = services;
         _bank = bank;
+        _customers = customers;
         _logger = logger;
     }
 
@@ -62,18 +66,16 @@ public partial class BankStatementPollingJob : BackgroundService
             }
             catch (Exception ex)
             {
-                LogFailedToProcessStatementEntryEntryid(entry.Id, ex);
+                _logger.LogError(ex, "Failed to process statement entry {EntryId}", entry.Id);
             }
         }
     }
 
     private async Task HandleOutgoing(LedgerDbContext db, BankStatementEntry entry, CancellationToken ct)
     {
-        // Outgoing = a withdrawal we initiated; match by reference
         if (!Guid.TryParse(entry.Reference, out var txId))
         {
-            _logger.LogWarning("Outgoing entry {EntryId} has unparseable reference '{Reference}'",
-                entry.Id, entry.Reference);
+            _logger.LogWarning("Outgoing entry {EntryId} has unparseable reference '{Ref}'", entry.Id, entry.Reference);
             return;
         }
 
@@ -83,61 +85,90 @@ public partial class BankStatementPollingJob : BackgroundService
 
         if (tx is null)
         {
-            _logger.LogWarning("No transaction found for outgoing reference {TxId}", txId);
+            _logger.LogWarning("No transaction for outgoing reference {TxId}", txId);
             return;
         }
 
-        if (tx.Status != TransactionStatus.Processing)
+        switch (tx.Type)
         {
-            _logger.LogWarning("Transaction {TxId} in unexpected status {Status} for settlement",
-                tx.Id, tx.Status);
-            return;
+            case TransactionType.Withdrawal when tx.Status == TransactionStatus.Processing:
+                foreach (var e in JournalEntryFactory.WithdrawalToSettled(tx)) tx.Entries.Add(e);
+                tx.Status = TransactionStatus.Settled;
+                tx.UpdatedAt = DateTime.UtcNow;
+                _logger.LogInformation("Withdrawal {TxId} settled", tx.Id);
+                break;
+
+            case TransactionType.Deposit when tx.Status == TransactionStatus.Processing
+                                              && tx.ReviewReason is not null:
+                // This is a bounce settlement (rejected deposit being refunded)
+                foreach (var e in JournalEntryFactory.BounceSettled(tx)) tx.Entries.Add(e);
+                tx.Status = TransactionStatus.Failed;
+                tx.UpdatedAt = DateTime.UtcNow;
+                _logger.LogInformation("Bounce {TxId} settled", tx.Id);
+                break;
+
+            default:
+                _logger.LogWarning("Unexpected outgoing match — TxId={TxId} Type={Type} Status={Status}",
+                    tx.Id, tx.Type, tx.Status);
+                break;
         }
-
-        foreach (var e in JournalEntryFactory.WithdrawalToSettled(tx))
-            tx.Entries.Add(e);
-
-        tx.Status = TransactionStatus.Settled;
-        tx.UpdatedAt = DateTime.UtcNow;
 
         await db.SaveChangesAsync(ct);
-        LogWithdrawalTxidSettled(tx.Id);
     }
 
     private async Task HandleIncoming(LedgerDbContext db, BankStatementEntry entry, CancellationToken ct)
     {
-        // Incoming = a customer deposit. No prior transaction — we create one directly in SETTLED.
-        // Fake customer id for now (we'll look it up by IBAN later).
-        var fakeCustomerId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        // Decide: clean path or review path?
+        var customer = _customers.FindByIban(entry.CounterpartyIban);
+        var forcedReview = entry.ForceReviewReason;
 
-        var tx = new Transaction
+        if (forcedReview is null && customer is not null)
         {
-            Id = Guid.NewGuid(),
-            Type = TransactionType.Deposit,
-            Status = TransactionStatus.Settled,
-            CustomerId = fakeCustomerId,
-            Amount = entry.Amount,
-            Currency = entry.Currency,
-            ExternalRef = entry.Id.ToString(),
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow
-        };
-
-        foreach (var e in JournalEntryFactory.DepositSettled(tx))
-            tx.Entries.Add(e);
-
-        db.Transactions.Add(tx);
-        await db.SaveChangesAsync(ct);
-
-        LogDepositTxidBookedFromStatementEntryEntryid(tx.Id, entry.Id);
+            // Clean deposit — book straight to Settled
+            var tx = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                Type = TransactionType.Deposit,
+                Status = TransactionStatus.Settled,
+                CustomerId = customer.Id,
+                Amount = entry.Amount,
+                Currency = entry.Currency,
+                SepaType = SepaType.Instant,
+                ExternalRef = entry.Id.ToString(),
+                CounterpartyIban = entry.CounterpartyIban,
+                CounterpartyName = entry.CounterpartyName,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            foreach (var e in JournalEntryFactory.DepositSettled(tx)) tx.Entries.Add(e);
+            db.Transactions.Add(tx);
+            await db.SaveChangesAsync(ct);
+            _logger.LogInformation("Deposit {TxId} settled clean for customer {CustomerId}", tx.Id, customer.Id);
+        }
+        else
+        {
+            // Review path — customer is uncertain, book to review suspense
+            var reason = forcedReview ?? ReviewReason.IbanNotOnFile;
+            var tx = new Transaction
+            {
+                Id = Guid.NewGuid(),
+                Type = TransactionType.Deposit,
+                Status = TransactionStatus.Processing,
+                CustomerId = null, // option A — honest about not knowing
+                Amount = entry.Amount,
+                Currency = entry.Currency,
+                SepaType = SepaType.Instant,
+                ExternalRef = entry.Id.ToString(),
+                CounterpartyIban = entry.CounterpartyIban,
+                CounterpartyName = entry.CounterpartyName,
+                ReviewReason = reason,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+            foreach (var e in JournalEntryFactory.DepositToReview(tx)) tx.Entries.Add(e);
+            db.Transactions.Add(tx);
+            await db.SaveChangesAsync(ct);
+            _logger.LogWarning("Deposit {TxId} routed to review ({Reason})", tx.Id, reason);
+        }
     }
-
-    [LoggerMessage(LogLevel.Information, "Deposit {TxId} booked from statement entry {EntryId}")]
-    partial void LogDepositTxidBookedFromStatementEntryEntryid(Guid txId, Guid entryId);
-
-    [LoggerMessage(LogLevel.Error, "Failed to process statement entry {EntryId}")]
-    partial void LogFailedToProcessStatementEntryEntryid(Guid entryId, Exception exception);
-
-    [LoggerMessage(LogLevel.Information, "Withdrawal {TxId} settled")]
-    partial void LogWithdrawalTxidSettled(Guid txId);
 }

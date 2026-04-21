@@ -43,14 +43,16 @@ public static class AccountNumbers
     public const int BankTreasury = 120;
     public const int Market = 130;
 
-    // In-flight assets / receivables (150-range)
-    public const int SuspenseDeposit = 150;
+    // In-flight assets (150-range)
+    public const int SuspenseDepositInflight = 150;
     public const int SuspenseTreasuryOut = 160;
     public const int SuspenseTreasuryIn = 170;
 
     // Liabilities (200-range)
     public const int CustomerViban = 210;
     public const int SuspenseWithdrawal = 220;
+    public const int SuspenseDepositReview = 230;
+    public const int SuspenseBounce = 240;
 }
 
 public class Transaction
@@ -62,10 +64,17 @@ public class Transaction
     public decimal Amount { get; set; }
     public string Currency { get; set; } = "EUR";
     public string? ExternalRef { get; set; }
+    public SepaType? SepaType { get; set; }
+
+    // For deposits that need review / bouncing
+    public string? CounterpartyIban { get; set; }
+    public string? CounterpartyName { get; set; }
+    public ReviewReason? ReviewReason { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public string? ReviewedBy { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
-    
-    public SepaType? SepaType { get; set; }  // nullable: only meaningful for deposits/withdrawals
 
     public ICollection<JournalEntry> Entries { get; set; } = new List<JournalEntry>();
 }
@@ -91,3 +100,12 @@ public enum SepaType
     Standard = 1,
     Instant = 2
 }
+
+public enum ReviewReason
+{
+    NameMismatch = 1,
+    IbanNotOnFile = 2,
+    SanctionsHit = 3,
+    AmountExceedsThreshold = 4
+}
+

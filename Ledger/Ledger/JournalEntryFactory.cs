@@ -7,7 +7,7 @@ public static class JournalEntryFactory
     public const short Debit = 1;
     public const short Credit = -1;
 
-    public static JournalEntry Entry(Guid txId, int accountNumber, decimal amount, short direction, Guid? customerId = null)
+    private static JournalEntry Entry(Guid txId, int accountNumber, decimal amount, short direction, Guid? customerId = null)
         => new()
         {
             TransactionId = txId,
@@ -18,36 +18,48 @@ public static class JournalEntryFactory
             PostedAt = DateTime.UtcNow
         };
 
-    /// <summary>
-    /// Withdrawal PENDING → PROCESSING: reduce customer balance, park in suspense.
-    ///   DR customer.viban         (liability down = debit)
-    ///   CR suspense.withdrawal    (liability up = credit)
-    /// </summary>
-    public static IEnumerable<JournalEntry> WithdrawalToProcessing(Transaction tx)
-    {
-        yield return Entry(tx.Id, AccountNumbers.CustomerViban,      tx.Amount, Debit,  tx.CustomerId);
-        yield return Entry(tx.Id, AccountNumbers.SuspenseWithdrawal, tx.Amount, Credit);
-    }
+    // ── WITHDRAWAL ────────────────────────────────────────────────
+    public static IEnumerable<JournalEntry> WithdrawalToProcessing(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.CustomerViban,      tx.Amount, Debit,  tx.CustomerId),
+        Entry(tx.Id, AccountNumbers.SuspenseWithdrawal, tx.Amount, Credit)
+    ];
 
-    /// <summary>
-    /// Withdrawal PROCESSING → SETTLED: clear suspense, money leaves pooling.
-    ///   DR suspense.withdrawal    (liability down = debit)
-    ///   CR bank.pooling           (asset down = credit)
-    /// </summary>
-    public static IEnumerable<JournalEntry> WithdrawalToSettled(Transaction tx)
-    {
-        yield return Entry(tx.Id, AccountNumbers.SuspenseWithdrawal, tx.Amount, Debit);
-        yield return Entry(tx.Id, AccountNumbers.BankPooling,        tx.Amount, Credit);
-    }
+    public static IEnumerable<JournalEntry> WithdrawalToSettled(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.SuspenseWithdrawal, tx.Amount, Debit),
+        Entry(tx.Id, AccountNumbers.BankPooling,        tx.Amount, Credit)
+    ];
 
-    /// <summary>
-    /// Deposit observed in statement → SETTLED directly (money already arrived).
-    ///   DR bank.pooling           (asset up = debit)
-    ///   CR customer.viban         (liability up = credit)
-    /// </summary>
-    public static IEnumerable<JournalEntry> DepositSettled(Transaction tx)
-    {
-        yield return Entry(tx.Id, AccountNumbers.BankPooling,   tx.Amount, Debit);
-        yield return Entry(tx.Id, AccountNumbers.CustomerViban, tx.Amount, Credit, tx.CustomerId);
-    }
+    // ── DEPOSIT — CLEAN PATH ──────────────────────────────────────
+    public static IEnumerable<JournalEntry> DepositSettled(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.BankPooling,   tx.Amount, Debit),
+        Entry(tx.Id, AccountNumbers.CustomerViban, tx.Amount, Credit, tx.CustomerId)
+    ];
+
+    // ── DEPOSIT — REVIEW PATH ─────────────────────────────────────
+    public static IEnumerable<JournalEntry> DepositToReview(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.BankPooling,          tx.Amount, Debit),
+        Entry(tx.Id, AccountNumbers.SuspenseDepositReview, tx.Amount, Credit)
+    ];
+
+    public static IEnumerable<JournalEntry> ReviewApproved(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.SuspenseDepositReview, tx.Amount, Debit),
+        Entry(tx.Id, AccountNumbers.CustomerViban,         tx.Amount, Credit, tx.CustomerId)
+    ];
+
+    public static IEnumerable<JournalEntry> ReviewRejected(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.SuspenseDepositReview, tx.Amount, Debit),
+        Entry(tx.Id, AccountNumbers.SuspenseBounce,        tx.Amount, Credit)
+    ];
+
+    public static IEnumerable<JournalEntry> BounceSettled(Transaction tx) =>
+    [
+        Entry(tx.Id, AccountNumbers.SuspenseBounce, tx.Amount, Debit),
+        Entry(tx.Id, AccountNumbers.BankPooling,    tx.Amount, Credit)
+    ];
 }

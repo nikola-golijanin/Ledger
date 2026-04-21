@@ -123,6 +123,16 @@ namespace Ledger.Infrastructure.Migrations
                         .HasColumnType("numeric(19,4)")
                         .HasColumnName("amount");
 
+                    b.Property<string>("CounterpartyIban")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("counterparty_iban");
+
+                    b.Property<string>("CounterpartyName")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("counterparty_name");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
@@ -142,6 +152,20 @@ namespace Ledger.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("external_ref");
+
+                    b.Property<string>("ReviewReason")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("review_reason");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reviewed_at");
+
+                    b.Property<string>("ReviewedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("reviewed_by");
 
                     b.Property<string>("SepaType")
                         .HasMaxLength(16)

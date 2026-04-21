@@ -1,4 +1,6 @@
-﻿namespace Ledger.Banking;
+﻿using Ledger.Domain;
+
+namespace Ledger.Banking;
 
 public class MockBank : IMockBank
 {
@@ -7,20 +9,16 @@ public class MockBank : IMockBank
 
     public void SubmitWithdrawal(string customerIban, string customerName, decimal amount, string reference)
     {
-        lock (_lock)
-        {
-            _statement.Add(new BankStatementEntry
-            {
-                Direction = StatementDirection.Outgoing,
-                Amount = amount,
-                CounterpartyIban = customerIban,
-                CounterpartyName = customerName,
-                Reference = reference
-            });
-        }
+        AppendOutgoing(customerIban, customerName, amount, reference);
     }
 
-    public void InjectDeposit(string customerIban, string customerName, decimal amount, string? reference = null)
+    public void SubmitBounce(string counterpartyIban, string counterpartyName, decimal amount, string reference)
+    {
+        AppendOutgoing(counterpartyIban, counterpartyName, amount, reference);
+    }
+
+    public void InjectDeposit(string customerIban, string customerName, decimal amount,
+        string? reference = null, ReviewReason? forceReview = null)
     {
         lock (_lock)
         {
@@ -30,17 +28,15 @@ public class MockBank : IMockBank
                 Amount = amount,
                 CounterpartyIban = customerIban,
                 CounterpartyName = customerName,
-                Reference = reference
+                Reference = reference,
+                ForceReviewReason = forceReview
             });
         }
     }
 
     public IReadOnlyList<BankStatementEntry> GetUnprocessed()
     {
-        lock (_lock)
-        {
-            return _statement.Where(e => !e.Processed).ToList();
-        }
+        lock (_lock) return _statement.Where(e => !e.Processed).ToList();
     }
 
     public void MarkProcessed(Guid entryId)
@@ -49,6 +45,21 @@ public class MockBank : IMockBank
         {
             var entry = _statement.FirstOrDefault(e => e.Id == entryId);
             if (entry is not null) entry.Processed = true;
+        }
+    }
+
+    private void AppendOutgoing(string iban, string name, decimal amount, string reference)
+    {
+        lock (_lock)
+        {
+            _statement.Add(new BankStatementEntry
+            {
+                Direction = StatementDirection.Outgoing,
+                Amount = amount,
+                CounterpartyIban = iban,
+                CounterpartyName = name,
+                Reference = reference
+            });
         }
     }
 }
@@ -62,9 +73,16 @@ public interface IMockBank
     void SubmitWithdrawal(string customerIban, string customerName, decimal amount, string reference);
 
     /// <summary>
+    /// Called by our "" after we've booked the transaction.
+    /// The bank receives the instruction and records it on the statement.
+    /// </summary>
+    void SubmitBounce(string counterpartyIban, string counterpartyName, decimal amount, string reference);
+
+    /// <summary>
     /// Test helper — injects a fake incoming transfer, as if a customer sent a SEPA to us.
     /// </summary>
-    void InjectDeposit(string customerIban, string customerName, decimal amount, string? reference = null);
+    void InjectDeposit(string customerIban, string customerName, decimal amount,
+        string? reference = null, ReviewReason? forceReview = null);
 
     /// <summary>
     /// Returns unprocessed statement entries (what our polling job reads).
@@ -79,8 +97,8 @@ public interface IMockBank
 
 public enum StatementDirection
 {
-    Incoming = 1,   // money arrived at pooling (a customer deposit)
-    Outgoing = 2    // money left pooling (a withdrawal we initiated)
+    Incoming = 1, // money arrived at pooling (a customer deposit)
+    Outgoing = 2 // money left pooling (a withdrawal we initiated)
 }
 
 public class BankStatementEntry
@@ -91,7 +109,10 @@ public class BankStatementEntry
     public string Currency { get; init; } = "EUR";
     public string CounterpartyIban { get; init; } = default!;
     public string CounterpartyName { get; init; } = default!;
-    public string? Reference { get; init; }   // echoes our Transaction.Id on withdrawals
+    public string? Reference { get; init; }
     public DateTime BookedAt { get; init; } = DateTime.UtcNow;
-    public bool Processed { get; set; }       // set by our poller once ingested
+    public bool Processed { get; set; }
+
+    // Testing knob: force the poller into the review path
+    public ReviewReason? ForceReviewReason { get; init; }
 }

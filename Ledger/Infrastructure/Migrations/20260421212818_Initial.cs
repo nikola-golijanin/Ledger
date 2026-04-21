@@ -50,6 +50,12 @@ namespace Ledger.Infrastructure.Migrations
                     amount = table.Column<decimal>(type: "numeric(19,4)", precision: 19, scale: 4, nullable: false),
                     currency = table.Column<string>(type: "character(3)", fixedLength: true, maxLength: 3, nullable: false),
                     external_ref = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    sepa_type = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: true),
+                    counterparty_iban = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    counterparty_name = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    review_reason = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: true),
+                    reviewed_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    reviewed_by = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },

@@ -1,67 +1,63 @@
 @Ledger_HostAddress = http://localhost:5144
 
-
-GET {{Ledger_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
-
-
-# curl -X POST http://localhost:5000/api/testing/inject-deposit 
-#  -H "Content-Type: application/json" 
-#  -d '{
-#    "customerIban": "DE89370400440532013000",
-#    "customerName": "Alice Test",
-#    "amount": 100.00,
-#    "reference": "Salary"
-#  }'
+### Clean deposit (Alice's IBAN matches the registry)
 POST {{Ledger_HostAddress}}/api/testing/inject-deposit
 Content-Type: application/json
 
 {
   "customerIban": "DE89370400440532013000",
-  "customerName": "Alice Test",
-  "amount": 100.00,
-  "reference": "Salary"
+  "customerName": "Alice Muller",
+  "amount": 100.00
 }
 
-###
+### Name-mismatch deposit needing review
+
+POST {{Ledger_HostAddress}}/api/testing/inject-deposit-for-review
+Content-Type: application/json
+
+{
+  "counterpartyIban": "DE89370400440532013000",
+  "counterpartyName": "Alicia Mueller",
+  "amount": 250.00,
+  "reason": 1
+}
 
 
-# curl -X POST http://localhost:5000/api/withdrawals 
-#  -H "Content-Type: application/json" 
-#  -d '{
-#    "customerId": "11111111-1111-1111-1111-111111111111",
-#    "customerIban": "DE89370400440532013000",
-#    "customerName": "Alice Test",
-#    "amount": 50.00
-#  }'
-POST {{Ledger_HostAddress}}/api/withdrawals
+### Approve it
+POST {{Ledger_HostAddress}}/api/reviews/30c9604a-6e0d-4205-969b-096768332ddb/approve
 Content-Type: application/json
 
 {
   "customerId": "11111111-1111-1111-1111-111111111111",
-  "customerIban": "DE89370400440532013000",
-  "customerName": "Alice Test",
-  "amount": 150.00
+  "reviewedBy": "ops@broker"
 }
 
-###
+### Reject it (and watch bounce settle ~5 seconds later):
 
-GET {{Ledger_HostAddress}}/api/withdrawals/11111111-1111-1111-1111-111111111111
-Content-Type: application/json
-
-
-###
-
-# Create an instant SEPA withdrawal that will get stuck
-POST {{Ledger_HostAddress}}/api/withdrawals/faulty
+POST {{Ledger_HostAddress}}/api/reviews/cfe61d05-ac08-43d0-b37b-45e93b5a58c1/reject
 Content-Type: application/json
 
 {
-  "customerId": "11111111-1111-1111-1111-111111111111",
-  "customerIban": "DE89370400440532013000",
-  "customerName": "Alice Test",
-  "amount": 50.00,
-  "sepaType": 2
+  "reviewedBy": "ops@broker"
 }
+
+
+
+
+
+### SELECT id, amount, review_reason, counterparty_name, counterparty_iban
+### FROM ledger.transactions
+### WHERE status = 'Processing' AND review_reason IS NOT NULL;
+
+
+
+### SELECT a.code, a.type,
+### SUM(je.direction * je.amount) AS signed,
+### CASE a.type
+### WHEN 'Asset'     THEN  SUM(je.direction * je.amount)
+### WHEN 'Liability' THEN -SUM(je.direction * je.amount)
+### END AS natural
+### FROM ledger.accounts a
+### LEFT JOIN ledger.journal_entries je ON je.account_number = a.number
+### GROUP BY a.code, a.type
+### ORDER BY a.code;

@@ -1,4 +1,5 @@
 ﻿using Ledger.Banking;
+using Ledger.Domain;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Ledger.Controllers;
@@ -26,6 +27,21 @@ public class TestingController : ControllerBase
     {
         if (request.Amount <= 0) return BadRequest("Amount must be positive.");
         _bank.InjectDeposit(request.CustomerIban, request.CustomerName, request.Amount, request.Reference);
+        return Ok();
+    }
+
+    public record InjectDepositForReviewRequest(
+        string CounterpartyIban,
+        string CounterpartyName,
+        decimal Amount,
+        ReviewReason Reason);
+
+    [HttpPost("inject-deposit-for-review")]
+    public IActionResult InjectDepositForReview([FromBody] InjectDepositForReviewRequest request)
+    {
+        if (request.Amount <= 0) return BadRequest("Amount must be positive.");
+        _bank.InjectDeposit(request.CounterpartyIban, request.CounterpartyName,
+            request.Amount, reference: null, forceReview: request.Reason);
         return Ok();
     }
 }
