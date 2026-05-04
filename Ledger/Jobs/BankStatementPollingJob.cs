@@ -9,7 +9,7 @@ namespace Ledger.Jobs;
 
 public class BankStatementPollingJob : BackgroundService
 {
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(0.05);
 
     private readonly IServiceProvider _services;
     private readonly IMockBank _bank;

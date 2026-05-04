@@ -35,6 +35,10 @@ namespace Ledger.Infrastructure.Migrations
                         .HasColumnType("character varying(64)")
                         .HasColumnName("code");
 
+                    b.Property<bool>("IsPostable")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_postable");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -59,6 +63,43 @@ namespace Ledger.Infrastructure.Migrations
                     b.HasIndex("ParentNumber");
 
                     b.ToTable("accounts", "ledger");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.AccountingEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("event_type");
+
+                    b.Property<DateTime>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<string>("PayloadJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<Guid>("TransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("transaction_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventType");
+
+                    b.HasIndex("TransactionId");
+
+                    b.ToTable("accounting_events", "ledger");
                 });
 
             modelBuilder.Entity("Ledger.Domain.JournalEntry", b =>
@@ -87,6 +128,10 @@ namespace Ledger.Infrastructure.Migrations
                         .HasColumnType("smallint")
                         .HasColumnName("direction");
 
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("event_id");
+
                     b.Property<DateTime>("PostedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("posted_at");
@@ -99,6 +144,8 @@ namespace Ledger.Infrastructure.Migrations
 
                     b.HasIndex("CustomerId")
                         .HasFilter("customer_id IS NOT NULL");
+
+                    b.HasIndex("EventId");
 
                     b.HasIndex("TransactionId");
 
@@ -209,11 +256,28 @@ namespace Ledger.Infrastructure.Migrations
                     b.Navigation("Parent");
                 });
 
+            modelBuilder.Entity("Ledger.Domain.AccountingEvent", b =>
+                {
+                    b.HasOne("Ledger.Domain.Transaction", "Transaction")
+                        .WithMany("Events")
+                        .HasForeignKey("TransactionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Transaction");
+                });
+
             modelBuilder.Entity("Ledger.Domain.JournalEntry", b =>
                 {
                     b.HasOne("Ledger.Domain.Account", "Account")
                         .WithMany()
                         .HasForeignKey("AccountNumber")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ledger.Domain.AccountingEvent", "Event")
+                        .WithMany("Entries")
+                        .HasForeignKey("EventId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
@@ -225,12 +289,21 @@ namespace Ledger.Infrastructure.Migrations
 
                     b.Navigation("Account");
 
+                    b.Navigation("Event");
+
                     b.Navigation("Transaction");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.AccountingEvent", b =>
+                {
+                    b.Navigation("Entries");
                 });
 
             modelBuilder.Entity("Ledger.Domain.Transaction", b =>
                 {
                     b.Navigation("Entries");
+
+                    b.Navigation("Events");
                 });
 #pragma warning restore 612, 618
         }

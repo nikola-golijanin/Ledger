@@ -2,6 +2,7 @@ using Ledger.Banking;
 using Ledger.Customers;
 using Ledger.Infrastructure;
 using Ledger.Jobs;
+using Ledger.Ledger;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,11 +23,11 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
 
 builder.Services.AddSingleton<IMockBank, MockBank>();
 builder.Services.AddSingleton<ICustomerRegistry, CustomerRegistry>();
+builder.Services.AddSingleton<IPostingEngine, PostingEngine>();
 
 builder.Services.AddHostedService<BankStatementPollingJob>();
 builder.Services.AddHostedService<SuspenseAgingMonitor>();
 builder.Services.AddHostedService<ReconciliationJob>();
-
 
 var app = builder.Build();
 

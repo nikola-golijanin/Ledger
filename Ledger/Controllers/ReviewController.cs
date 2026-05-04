@@ -15,31 +15,37 @@ public class ReviewController : ControllerBase
     private readonly LedgerDbContext _db;
     private readonly IMockBank _bank;
     private readonly ICustomerRegistry _customers;
+    private readonly IPostingEngine _posting;
 
-    public ReviewController(LedgerDbContext db, IMockBank bank, ICustomerRegistry customers)
+    public ReviewController(LedgerDbContext db, IMockBank bank, ICustomerRegistry customers, IPostingEngine posting)
     {
         _db = db;
         _bank = bank;
         _customers = customers;
+        _posting = posting;
     }
 
+    public record ApproveRequest(Guid CustomerId, string ReviewedBy);
+    public record RejectRequest(string ReviewedBy);
 
     [HttpPost("{txId:guid}/approve")]
     public async Task<IActionResult> Approve(Guid txId, [FromBody] ApproveRequest request, CancellationToken ct)
     {
         var tx = await _db.Transactions
             .Include(t => t.Entries)
+            .Include(t => t.Events)
             .FirstOrDefaultAsync(t => t.Id == txId, ct);
 
         if (tx is null) return NotFound();
         if (tx.Type != TransactionType.Deposit || tx.ReviewReason is null || tx.Status != TransactionStatus.Processing)
-            return BadRequest(new { error = "Transaction is not a deposit awaiting review." });
+            return BadRequest("Transaction is not a deposit awaiting review.");
 
         if (_customers.FindById(request.CustomerId) is null)
-            return BadRequest(new { error = "Unknown customer." });
+            return BadRequest("Unknown customer.");
 
         tx.CustomerId = request.CustomerId;
-        foreach (var e in JournalEntryFactory.ReviewApproved(tx)) tx.Entries.Add(e);
+        _posting.RaiseEvent(tx, EventTypes.DepositReviewApproved, new { request.ReviewedBy });
+
         tx.Status = TransactionStatus.Settled;
         tx.ReviewedAt = DateTime.UtcNow;
         tx.ReviewedBy = request.ReviewedBy;
@@ -53,15 +59,15 @@ public class ReviewController : ControllerBase
     public async Task<IActionResult> Reject(Guid txId, [FromBody] RejectRequest request, CancellationToken ct)
     {
         var tx = await _db.Transactions
-            .Include(t => t.Entries)
+            .Include(t => t.Entries).Include(t => t.Events)
             .FirstOrDefaultAsync(t => t.Id == txId, ct);
 
         if (tx is null) return NotFound();
         if (tx.Type != TransactionType.Deposit || tx.ReviewReason is null || tx.Status != TransactionStatus.Processing)
-            return BadRequest(new { error = "Transaction is not a deposit awaiting review." });
+            return BadRequest("Transaction is not a deposit awaiting review.");
 
-        // Move from review bucket to bounce bucket, then instruct bank to send the money back
-        foreach (var e in JournalEntryFactory.ReviewRejected(tx)) tx.Entries.Add(e);
+        _posting.RaiseEvent(tx, EventTypes.BounceInitiated, new { request.ReviewedBy });
+
         tx.ReviewedAt = DateTime.UtcNow;
         tx.ReviewedBy = request.ReviewedBy;
         tx.UpdatedAt = DateTime.UtcNow;
@@ -72,8 +78,4 @@ public class ReviewController : ControllerBase
         _bank.SubmitBounce(tx.CounterpartyIban!, tx.CounterpartyName!, tx.Amount, tx.Id.ToString());
         return Ok(new { tx.Id, tx.Status, awaitingBounce = true });
     }
-
-    public record ApproveRequest(Guid CustomerId, string ReviewedBy);
-
-    public record RejectRequest(string ReviewedBy);
 }

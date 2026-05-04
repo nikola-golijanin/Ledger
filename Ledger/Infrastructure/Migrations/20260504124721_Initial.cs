@@ -24,7 +24,8 @@ namespace Ledger.Infrastructure.Migrations
                     code = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     name = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     type = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
-                    parent_number = table.Column<int>(type: "integer", nullable: true)
+                    parent_number = table.Column<int>(type: "integer", nullable: true),
+                    is_postable = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -65,6 +66,30 @@ namespace Ledger.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "accounting_events",
+                schema: "ledger",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    transaction_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    event_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    occurred_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    payload = table.Column<string>(type: "jsonb", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_accounting_events", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_accounting_events_transactions_transaction_id",
+                        column: x => x.transaction_id,
+                        principalSchema: "ledger",
+                        principalTable: "transactions",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "journal_entries",
                 schema: "ledger",
                 columns: table => new
@@ -72,6 +97,7 @@ namespace Ledger.Infrastructure.Migrations
                     id = table.Column<long>(type: "bigint", nullable: false)
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityAlwaysColumn),
                     transaction_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    event_id = table.Column<Guid>(type: "uuid", nullable: false),
                     account_number = table.Column<int>(type: "integer", nullable: false),
                     customer_id = table.Column<Guid>(type: "uuid", nullable: true),
                     amount = table.Column<decimal>(type: "numeric(19,4)", precision: 19, scale: 4, nullable: false),
@@ -83,6 +109,13 @@ namespace Ledger.Infrastructure.Migrations
                     table.PrimaryKey("PK_journal_entries", x => x.id);
                     table.CheckConstraint("ck_journal_entries_amount_positive", "amount > 0");
                     table.CheckConstraint("ck_journal_entries_direction", "direction IN (-1, 1)");
+                    table.ForeignKey(
+                        name: "FK_journal_entries_accounting_events_event_id",
+                        column: x => x.event_id,
+                        principalSchema: "ledger",
+                        principalTable: "accounting_events",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_journal_entries_accounts_account_number",
                         column: x => x.account_number,
@@ -98,6 +131,18 @@ namespace Ledger.Infrastructure.Migrations
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
                 });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_accounting_events_event_type",
+                schema: "ledger",
+                table: "accounting_events",
+                column: "event_type");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_accounting_events_transaction_id",
+                schema: "ledger",
+                table: "accounting_events",
+                column: "transaction_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_accounts_code",
@@ -124,6 +169,12 @@ namespace Ledger.Infrastructure.Migrations
                 table: "journal_entries",
                 column: "customer_id",
                 filter: "customer_id IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_journal_entries_event_id",
+                schema: "ledger",
+                table: "journal_entries",
+                column: "event_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_journal_entries_transaction_id",
@@ -155,6 +206,10 @@ namespace Ledger.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(
                 name: "journal_entries",
+                schema: "ledger");
+
+            migrationBuilder.DropTable(
+                name: "accounting_events",
                 schema: "ledger");
 
             migrationBuilder.DropTable(
