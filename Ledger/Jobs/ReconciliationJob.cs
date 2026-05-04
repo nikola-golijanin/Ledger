@@ -1,5 +1,4 @@
-﻿using Ledger.Domain;
-using Ledger.Infrastructure;
+﻿using Ledger.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
 namespace Ledger.Jobs;
@@ -11,9 +10,7 @@ public class ReconciliationJob : BackgroundService
     private readonly IServiceProvider _services;
     private readonly ILogger<ReconciliationJob> _logger;
 
-    public ReconciliationJob(
-        IServiceProvider services,
-        ILogger<ReconciliationJob> logger)
+    public ReconciliationJob(IServiceProvider services, ILogger<ReconciliationJob> logger)
     {
         _services = services;
         _logger = logger;
@@ -23,15 +20,8 @@ public class ReconciliationJob : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
-            {
-                await CheckOnce(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Reconciliation failed");
-            }
-
+            try { await CheckOnce(stoppingToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Reconciliation failed"); }
             await Task.Delay(CheckInterval, stoppingToken);
         }
     }
@@ -41,56 +31,23 @@ public class ReconciliationJob : BackgroundService
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<LedgerDbContext>();
 
-        var balances = await db.JournalEntries
-            .GroupBy(e => e.AccountNumber)
-            .Select(g => new { Account = g.Key, Signed = g.Sum(e => (decimal)e.Direction * e.Amount) })
-            .ToDictionaryAsync(x => x.Account, x => x.Signed, ct);
-
-        decimal Get(int acc) => balances.TryGetValue(acc, out var v) ? v : 0m;
-
-        var pooling = Get(AccountNumbers.BankPooling);
-        var customerSigned = Get(AccountNumbers.CustomerViban);
-        var suspenseDepositInf = Get(AccountNumbers.SuspenseDepositInflight);
-        var suspenseWithdrawal = Get(AccountNumbers.SuspenseWithdrawal);
-        var suspenseReview = Get(AccountNumbers.SuspenseDepositReview);
-        var suspenseBounce = Get(AccountNumbers.SuspenseBounce);
-
-        // Flip liabilities to natural form for readability
-        var customerOwed = -customerSigned;
-        var withdrawalInFlight = -suspenseWithdrawal;
-        var inReview = -suspenseReview;
-        var bounceInFlight = -suspenseBounce;
-
-        // Invariant:
-        //   pooling + suspense.deposit.inflight
-        //     == customer.viban + suspense.withdrawal + suspense.deposit.review + suspense.bounce
-        var drift = pooling
-                    + suspenseDepositInf
-                    - customerOwed
-                    - withdrawalInFlight
-                    - inReview
-                    - bounceInFlight;
+        // The accounting equation: SUM(direction * amount) across ALL entries == 0
+        var drift = await db.JournalEntries
+            .SumAsync(e => e.Direction * e.Amount, ct);
 
         if (drift != 0m)
-        {
-            _logger.LogError(
-                "RECONCILIATION DRIFT: {Drift} | pooling={P} customerOwed={C} withdrawal={W} review={R} bounce={B} inflight={I}",
-                drift, pooling, customerOwed, withdrawalInFlight, inReview, bounceInFlight, suspenseDepositInf);
-        }
+            _logger.LogError("ACCOUNTING EQUATION VIOLATED. Drift={Drift}", drift);
         else
-        {
-            _logger.LogInformation(
-                "Reconciliation OK | pooling={P} customerOwed={C} withdrawal={W} review={R} bounce={B}",
-                pooling, customerOwed, withdrawalInFlight, inReview, bounceInFlight);
-        }
+            _logger.LogInformation("Reconciliation OK (drift=0)");
 
-        var imbalancedTx = await db.JournalEntries
+        // Per-transaction balance check
+        var imbalanced = await db.JournalEntries
             .GroupBy(e => e.TransactionId)
-            .Select(g => new { TxId = g.Key, Sum = g.Sum(e => (decimal)e.Direction * e.Amount) })
+            .Select(g => new { TxId = g.Key, Sum = g.Sum(e => e.Direction * e.Amount) })
             .Where(x => x.Sum != 0m)
             .ToListAsync(ct);
 
-        foreach (var bad in imbalancedTx)
-            _logger.LogError("IMBALANCED TRANSACTION: TxId={TxId} Sum={Sum}", bad.TxId, bad.Sum);
+        foreach (var bad in imbalanced)
+            _logger.LogError("IMBALANCED TRANSACTION: {TxId} sum={Sum}", bad.TxId, bad.Sum);
     }
 }

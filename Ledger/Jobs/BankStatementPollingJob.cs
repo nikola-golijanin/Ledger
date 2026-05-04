@@ -32,15 +32,8 @@ public class BankStatementPollingJob : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try
-            {
-                await PollOnce(stoppingToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error polling bank statement");
-            }
-
+            try { await PollOnce(stoppingToken); }
+            catch (Exception ex) { _logger.LogError(ex, "Error polling bank statement"); }
             await Task.Delay(PollInterval, stoppingToken);
         }
     }
@@ -52,15 +45,16 @@ public class BankStatementPollingJob : BackgroundService
 
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<LedgerDbContext>();
+        var posting = scope.ServiceProvider.GetRequiredService<IPostingEngine>();
 
         foreach (var entry in entries)
         {
             try
             {
                 if (entry.Direction == StatementDirection.Outgoing)
-                    await HandleOutgoing(db, entry, ct);
+                    await HandleOutgoing(db, posting, entry, ct);
                 else
-                    await HandleIncoming(db, entry, ct);
+                    await HandleIncoming(db, posting, entry, ct);
 
                 _bank.MarkProcessed(entry.Id);
             }
@@ -71,7 +65,7 @@ public class BankStatementPollingJob : BackgroundService
         }
     }
 
-    private async Task HandleOutgoing(LedgerDbContext db, BankStatementEntry entry, CancellationToken ct)
+    private async Task HandleOutgoing(LedgerDbContext db, IPostingEngine posting, BankStatementEntry entry, CancellationToken ct)
     {
         if (!Guid.TryParse(entry.Reference, out var txId))
         {
@@ -81,6 +75,7 @@ public class BankStatementPollingJob : BackgroundService
 
         var tx = await db.Transactions
             .Include(t => t.Entries)
+            .Include(t => t.Events)
             .FirstOrDefaultAsync(t => t.Id == txId, ct);
 
         if (tx is null)
@@ -89,86 +84,79 @@ public class BankStatementPollingJob : BackgroundService
             return;
         }
 
-        switch (tx.Type)
+        // Decide which event to raise based on what was previously raised on this tx
+        var lastEvent = tx.Events.OrderBy(e => e.OccurredAt).LastOrDefault();
+
+        switch (lastEvent?.EventType)
         {
-            case TransactionType.Withdrawal when tx.Status == TransactionStatus.Processing:
-                foreach (var e in JournalEntryFactory.WithdrawalToSettled(tx)) tx.Entries.Add(e);
+            case EventTypes.WithdrawalInitiated:
+                posting.RaiseEvent(tx, EventTypes.WithdrawalSettled);
                 tx.Status = TransactionStatus.Settled;
                 tx.UpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation("Withdrawal {TxId} settled", tx.Id);
                 break;
 
-            case TransactionType.Deposit when tx.Status == TransactionStatus.Processing
-                                              && tx.ReviewReason is not null:
-                // This is a bounce settlement (rejected deposit being refunded)
-                foreach (var e in JournalEntryFactory.BounceSettled(tx)) tx.Entries.Add(e);
+            case EventTypes.BounceInitiated:
+                posting.RaiseEvent(tx, EventTypes.BounceSettled);
                 tx.Status = TransactionStatus.Failed;
                 tx.UpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation("Bounce {TxId} settled", tx.Id);
                 break;
 
             default:
-                _logger.LogWarning("Unexpected outgoing match — TxId={TxId} Type={Type} Status={Status}",
-                    tx.Id, tx.Type, tx.Status);
+                _logger.LogWarning("Unexpected outgoing match — TxId={TxId} LastEvent={LastEvent}",
+                    tx.Id, lastEvent?.EventType);
                 break;
         }
 
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task HandleIncoming(LedgerDbContext db, BankStatementEntry entry, CancellationToken ct)
+    private async Task HandleIncoming(LedgerDbContext db, IPostingEngine posting, BankStatementEntry entry, CancellationToken ct)
     {
-        // Decide: clean path or review path?
         var customer = _customers.FindByIban(entry.CounterpartyIban);
         var forcedReview = entry.ForceReviewReason;
 
         if (forcedReview is null && customer is not null)
         {
-            // Clean deposit — book straight to Settled
-            var tx = new Transaction
-            {
-                Id = Guid.NewGuid(),
-                Type = TransactionType.Deposit,
-                Status = TransactionStatus.Settled,
-                CustomerId = customer.Id,
-                Amount = entry.Amount,
-                Currency = entry.Currency,
-                SepaType = SepaType.Instant,
-                ExternalRef = entry.Id.ToString(),
-                CounterpartyIban = entry.CounterpartyIban,
-                CounterpartyName = entry.CounterpartyName,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            foreach (var e in JournalEntryFactory.DepositSettled(tx)) tx.Entries.Add(e);
+            // Clean match
+            var tx = NewDepositTransaction(entry, customer.Id, reviewReason: null);
             db.Transactions.Add(tx);
+            posting.RaiseEvent(tx, EventTypes.DepositDetectedCleanMatch,
+                new { entry.CounterpartyIban, entry.CounterpartyName, customer_id = customer.Id });
             await db.SaveChangesAsync(ct);
             _logger.LogInformation("Deposit {TxId} settled clean for customer {CustomerId}", tx.Id, customer.Id);
         }
         else
         {
-            // Review path — customer is uncertain, book to review suspense
             var reason = forcedReview ?? ReviewReason.IbanNotOnFile;
-            var tx = new Transaction
-            {
-                Id = Guid.NewGuid(),
-                Type = TransactionType.Deposit,
-                Status = TransactionStatus.Processing,
-                CustomerId = null, // option A — honest about not knowing
-                Amount = entry.Amount,
-                Currency = entry.Currency,
-                SepaType = SepaType.Instant,
-                ExternalRef = entry.Id.ToString(),
-                CounterpartyIban = entry.CounterpartyIban,
-                CounterpartyName = entry.CounterpartyName,
-                ReviewReason = reason,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            foreach (var e in JournalEntryFactory.DepositToReview(tx)) tx.Entries.Add(e);
+            var tx = NewDepositTransaction(entry, customerId: null, reviewReason: reason);
             db.Transactions.Add(tx);
+            posting.RaiseEvent(tx, EventTypes.DepositDetectedRequiresReview,
+                new { entry.CounterpartyIban, entry.CounterpartyName, reason = reason.ToString() });
             await db.SaveChangesAsync(ct);
             _logger.LogWarning("Deposit {TxId} routed to review ({Reason})", tx.Id, reason);
         }
+    }
+
+    private static Transaction NewDepositTransaction(BankStatementEntry entry, Guid? customerId, ReviewReason? reviewReason)
+    {
+        var now = DateTime.UtcNow;
+        return new Transaction
+        {
+            Id = Guid.NewGuid(),
+            Type = TransactionType.Deposit,
+            Status = customerId is not null ? TransactionStatus.Settled : TransactionStatus.Processing,
+            CustomerId = customerId,
+            Amount = entry.Amount,
+            Currency = entry.Currency,
+            SepaType = SepaType.Instant,
+            ExternalRef = entry.Id.ToString(),
+            CounterpartyIban = entry.CounterpartyIban,
+            CounterpartyName = entry.CounterpartyName,
+            ReviewReason = reviewReason,
+            CreatedAt = now,
+            UpdatedAt = now,
+        };
     }
 }

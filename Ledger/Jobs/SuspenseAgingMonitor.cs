@@ -8,15 +8,11 @@ public class SuspenseAgingMonitor : BackgroundService
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(15);
 
-    /// <summary>
-    /// Per-bucket SLA. Transactions still in Processing with entries in the bucket
-    /// older than the SLA get flagged.
-    /// </summary>
     private static readonly Dictionary<int, TimeSpan> SlaByAccount = new()
     {
-        [AccountNumbers.SuspenseWithdrawal]     = TimeSpan.FromSeconds(30),   // Instant SEPA
-        [AccountNumbers.SuspenseDepositReview]  = TimeSpan.FromHours(4),       // ops review
-        [AccountNumbers.SuspenseBounce]         = TimeSpan.FromMinutes(5),     // bounces go fast
+        [AccountNumbers.SuspenseWithdrawal]    = TimeSpan.FromSeconds(30),
+        [AccountNumbers.SuspenseDepositReview] = TimeSpan.FromHours(4),
+        [AccountNumbers.SuspenseBounce]        = TimeSpan.FromMinutes(5),
     };
 
     private readonly IServiceProvider _services;
@@ -42,15 +38,11 @@ public class SuspenseAgingMonitor : BackgroundService
     {
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<LedgerDbContext>();
-
         var now = DateTime.UtcNow;
 
         foreach (var (accountNumber, sla) in SlaByAccount)
         {
             var cutoff = now - sla;
-
-            // Find transactions with non-zero net in this suspense account whose oldest
-            // entry for this account is older than cutoff.
             var stuck = await db.JournalEntries
                 .Where(e => e.AccountNumber == accountNumber)
                 .GroupBy(e => e.TransactionId)
@@ -64,11 +56,8 @@ public class SuspenseAgingMonitor : BackgroundService
                 .ToListAsync(ct);
 
             foreach (var s in stuck)
-            {
-                _logger.LogWarning(
-                    "STUCK IN SUSPENSE: Account={Account} TxId={TxId} Net={Net} Age={Age} SLA={Sla}",
+                _logger.LogWarning("STUCK IN SUSPENSE: Account={Account} TxId={TxId} Net={Net} Age={Age} SLA={Sla}",
                     accountNumber, s.TxId, s.Net, now - s.Oldest, sla);
-            }
         }
     }
 }
