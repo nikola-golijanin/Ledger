@@ -32,8 +32,15 @@ public class BankStatementPollingJob : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            try { await PollOnce(stoppingToken); }
-            catch (Exception ex) { _logger.LogError(ex, "Error polling bank statement"); }
+            try
+            {
+                await PollOnce(stoppingToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error polling bank statement");
+            }
+
             await Task.Delay(PollInterval, stoppingToken);
         }
     }
@@ -65,7 +72,8 @@ public class BankStatementPollingJob : BackgroundService
         }
     }
 
-    private async Task HandleOutgoing(LedgerDbContext db, IPostingEngine posting, BankStatementEntry entry, CancellationToken ct)
+    private async Task HandleOutgoing(LedgerDbContext db, IPostingEngine posting, BankStatementEntry entry,
+        CancellationToken ct)
     {
         if (!Guid.TryParse(entry.Reference, out var txId))
         {
@@ -90,14 +98,14 @@ public class BankStatementPollingJob : BackgroundService
         switch (lastEvent?.EventType)
         {
             case EventTypes.WithdrawalInitiated:
-                posting.RaiseEvent(tx, EventTypes.WithdrawalSettled);
+                await posting.RaiseEventAsync(tx, EventTypes.WithdrawalSettled, ct: ct);
                 tx.Status = TransactionStatus.Settled;
                 tx.UpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation("Withdrawal {TxId} settled", tx.Id);
                 break;
 
             case EventTypes.BounceInitiated:
-                posting.RaiseEvent(tx, EventTypes.BounceSettled);
+                await posting.RaiseEventAsync(tx, EventTypes.BounceSettled, ct: ct);
                 tx.Status = TransactionStatus.Failed;
                 tx.UpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation("Bounce {TxId} settled", tx.Id);
@@ -112,7 +120,8 @@ public class BankStatementPollingJob : BackgroundService
         await db.SaveChangesAsync(ct);
     }
 
-    private async Task HandleIncoming(LedgerDbContext db, IPostingEngine posting, BankStatementEntry entry, CancellationToken ct)
+    private async Task HandleIncoming(LedgerDbContext db, IPostingEngine posting, BankStatementEntry entry,
+        CancellationToken ct)
     {
         var customer = _customers.FindByIban(entry.CounterpartyIban);
         var forcedReview = entry.ForceReviewReason;
@@ -122,8 +131,8 @@ public class BankStatementPollingJob : BackgroundService
             // Clean match
             var tx = NewDepositTransaction(entry, customer.Id, reviewReason: null);
             db.Transactions.Add(tx);
-            posting.RaiseEvent(tx, EventTypes.DepositDetectedCleanMatch,
-                new { entry.CounterpartyIban, entry.CounterpartyName, customer_id = customer.Id });
+            await posting.RaiseEventAsync(tx, EventTypes.DepositDetectedCleanMatch,
+                new { entry.CounterpartyIban, entry.CounterpartyName, customer_id = customer.Id }, ct);
             await db.SaveChangesAsync(ct);
             _logger.LogInformation("Deposit {TxId} settled clean for customer {CustomerId}", tx.Id, customer.Id);
         }
@@ -132,14 +141,15 @@ public class BankStatementPollingJob : BackgroundService
             var reason = forcedReview ?? ReviewReason.IbanNotOnFile;
             var tx = NewDepositTransaction(entry, customerId: null, reviewReason: reason);
             db.Transactions.Add(tx);
-            posting.RaiseEvent(tx, EventTypes.DepositDetectedRequiresReview,
-                new { entry.CounterpartyIban, entry.CounterpartyName, reason = reason.ToString() });
+            await posting.RaiseEventAsync(tx, EventTypes.DepositDetectedRequiresReview,
+                new { entry.CounterpartyIban, entry.CounterpartyName, reason = reason.ToString() }, ct);
             await db.SaveChangesAsync(ct);
             _logger.LogWarning("Deposit {TxId} routed to review ({Reason})", tx.Id, reason);
         }
     }
 
-    private static Transaction NewDepositTransaction(BankStatementEntry entry, Guid? customerId, ReviewReason? reviewReason)
+    private static Transaction NewDepositTransaction(BankStatementEntry entry, Guid? customerId,
+        ReviewReason? reviewReason)
     {
         var now = DateTime.UtcNow;
         return new Transaction

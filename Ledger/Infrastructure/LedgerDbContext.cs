@@ -14,7 +14,8 @@ public class LedgerDbContext : DbContext
     public DbSet<Transaction> Transactions => Set<Transaction>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<AccountingEvent> AccountingEvents => Set<AccountingEvent>();
-
+    public DbSet<PostingRule> PostingRules => Set<PostingRule>();
+    public DbSet<PostingRuleLine> PostingRuleLines => Set<PostingRuleLine>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.HasDefaultSchema("ledger");

@@ -1,25 +1,41 @@
 ﻿using Ledger.Domain;
+using Ledger.Infrastructure;
+using Microsoft.EntityFrameworkCore;
 
 namespace Ledger.Ledger;
 
 public interface IPostingEngine
 {
     /// <summary>
-    /// Raises an event for a transaction and produces the corresponding journal entries.
-    /// The event is attached to tx.Events; the entries are attached to tx.Entries.
-    /// Caller is responsible for SaveChanges.
+    /// Raises an event for a transaction and produces journal entries from the active posting rule.
+    /// Both the event and the entries are attached to tx; caller is responsible for SaveChanges.
     /// </summary>
-    AccountingEvent RaiseEvent(Transaction tx, string eventType, object? payload = null);
+    Task<AccountingEvent> RaiseEventAsync(
+        Transaction tx,
+        string eventType,
+        object? payload = null,
+        CancellationToken ct = default);
 }
 
 public class PostingEngine : IPostingEngine
 {
-    public AccountingEvent RaiseEvent(Transaction tx, string eventType, object? payload = null)
-    {
+    private readonly LedgerDbContext _db;
 
-        var templates = PostingRules.For(eventType);
-        
+    public PostingEngine(LedgerDbContext db) => _db = db;
+
+    public async Task<AccountingEvent> RaiseEventAsync(
+        Transaction tx,
+        string eventType,
+        object? payload = null,
+        CancellationToken ct = default)
+    {
+        var rule = await _db.PostingRules
+            .Include(r => r.Lines.OrderBy(l => l.Sequence))
+            .FirstOrDefaultAsync(r => r.EventType == eventType, ct)
+            ?? throw new InvalidOperationException($"No posting rule for event type '{eventType}'");
+
         var now = DateTime.UtcNow;
+
         var evt = new AccountingEvent
         {
             Id = Guid.NewGuid(),
@@ -29,22 +45,22 @@ public class PostingEngine : IPostingEngine
             CreatedAt = now,
             PayloadJson = payload is null
                 ? null
-                : System.Text.Json.JsonSerializer.Serialize(payload)
+                : System.Text.Json.JsonSerializer.Serialize(payload),
         };
-        
+
         tx.Events.Add(evt);
-        
-        foreach (var t in templates)
+
+        foreach (var line in rule.Lines)
         {
             tx.Entries.Add(new JournalEntry
             {
                 TransactionId = tx.Id,
                 EventId = evt.Id,
-                AccountNumber = t.AccountNumber,
+                AccountNumber = line.AccountNumber,
                 Amount = tx.Amount,
-                Direction = t.Direction,
-                CustomerId = t.CarriesCustomerId ? tx.CustomerId : null,
-                PostedAt = now
+                Direction = line.Direction,
+                CustomerId = line.CarriesCustomerId ? tx.CustomerId : null,
+                PostedAt = now,
             });
         }
 

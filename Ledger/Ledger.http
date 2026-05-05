@@ -57,4 +57,22 @@ Content-Type: application/json
   "reason": 1
 }
 
+### # Clean deposit — should still work
+
+# curl -X POST http://localhost:5000/api/testing/inject-deposit 
+#  -H "Content-Type: application/json" 
+#  -d '{
+#    "customerIban": "DE89370400440532013000",
+#    "customerName": "Alice Muller",
+#    "amount": 100.00
+#  }'
+POST http://localhost:5144/api/testing/inject-deposit
+Content-Type: application/json
+
+{
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Muller",
+  "amount": 100.00
+}
+
 ###

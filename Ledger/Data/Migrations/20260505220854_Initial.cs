@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Ledger.Infrastructure.Migrations
+namespace Ledger.Data.Migrations
 {
     /// <inheritdoc />
     public partial class Initial : Migration
@@ -40,6 +40,21 @@ namespace Ledger.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "posting_rules",
+                schema: "ledger",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    event_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    description = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                    created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_posting_rules", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "transactions",
                 schema: "ledger",
                 columns: table => new
@@ -63,6 +78,38 @@ namespace Ledger.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_transactions", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "posting_rule_lines",
+                schema: "ledger",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    posting_rule_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    sequence = table.Column<int>(type: "integer", nullable: false),
+                    account_number = table.Column<int>(type: "integer", nullable: false),
+                    direction = table.Column<short>(type: "smallint", nullable: false),
+                    carries_customer_id = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_posting_rule_lines", x => x.id);
+                    table.CheckConstraint("ck_posting_rule_lines_direction", "direction IN (-1, 1)");
+                    table.ForeignKey(
+                        name: "FK_posting_rule_lines_accounts_account_number",
+                        column: x => x.account_number,
+                        principalSchema: "ledger",
+                        principalTable: "accounts",
+                        principalColumn: "number",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_posting_rule_lines_posting_rules_posting_rule_id",
+                        column: x => x.posting_rule_id,
+                        principalSchema: "ledger",
+                        principalTable: "posting_rules",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -183,6 +230,32 @@ namespace Ledger.Infrastructure.Migrations
                 column: "transaction_id");
 
             migrationBuilder.CreateIndex(
+                name: "IX_posting_rule_lines_account_number",
+                schema: "ledger",
+                table: "posting_rule_lines",
+                column: "account_number");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_posting_rule_lines_posting_rule_id",
+                schema: "ledger",
+                table: "posting_rule_lines",
+                column: "posting_rule_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_posting_rule_lines_posting_rule_id_sequence",
+                schema: "ledger",
+                table: "posting_rule_lines",
+                columns: new[] { "posting_rule_id", "sequence" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_posting_rules_event_type",
+                schema: "ledger",
+                table: "posting_rules",
+                column: "event_type",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_transactions_customer_id",
                 schema: "ledger",
                 table: "transactions",
@@ -209,11 +282,19 @@ namespace Ledger.Infrastructure.Migrations
                 schema: "ledger");
 
             migrationBuilder.DropTable(
+                name: "posting_rule_lines",
+                schema: "ledger");
+
+            migrationBuilder.DropTable(
                 name: "accounting_events",
                 schema: "ledger");
 
             migrationBuilder.DropTable(
                 name: "accounts",
+                schema: "ledger");
+
+            migrationBuilder.DropTable(
+                name: "posting_rules",
                 schema: "ledger");
 
             migrationBuilder.DropTable(

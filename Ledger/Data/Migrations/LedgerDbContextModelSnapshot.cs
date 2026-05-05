@@ -8,7 +8,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Ledger.Infrastructure.Migrations
+namespace Ledger.Data.Migrations
 {
     [DbContext(typeof(LedgerDbContext))]
     partial class LedgerDbContextModelSnapshot : ModelSnapshot
@@ -159,6 +159,76 @@ namespace Ledger.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Ledger.Domain.PostingRule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("EventType")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("event_type");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventType")
+                        .IsUnique();
+
+                    b.ToTable("posting_rules", "ledger");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.PostingRuleLine", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("AccountNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("account_number");
+
+                    b.Property<bool>("CarriesCustomerId")
+                        .HasColumnType("boolean")
+                        .HasColumnName("carries_customer_id");
+
+                    b.Property<short>("Direction")
+                        .HasColumnType("smallint")
+                        .HasColumnName("direction");
+
+                    b.Property<Guid>("PostingRuleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("posting_rule_id");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("integer")
+                        .HasColumnName("sequence");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AccountNumber");
+
+                    b.HasIndex("PostingRuleId");
+
+                    b.HasIndex("PostingRuleId", "Sequence")
+                        .IsUnique();
+
+                    b.ToTable("posting_rule_lines", "ledger", t =>
+                        {
+                            t.HasCheckConstraint("ck_posting_rule_lines_direction", "direction IN (-1, 1)");
+                        });
+                });
+
             modelBuilder.Entity("Ledger.Domain.Transaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -294,9 +364,33 @@ namespace Ledger.Infrastructure.Migrations
                     b.Navigation("Transaction");
                 });
 
+            modelBuilder.Entity("Ledger.Domain.PostingRuleLine", b =>
+                {
+                    b.HasOne("Ledger.Domain.Account", "Account")
+                        .WithMany()
+                        .HasForeignKey("AccountNumber")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Ledger.Domain.PostingRule", "PostingRule")
+                        .WithMany("Lines")
+                        .HasForeignKey("PostingRuleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Account");
+
+                    b.Navigation("PostingRule");
+                });
+
             modelBuilder.Entity("Ledger.Domain.AccountingEvent", b =>
                 {
                     b.Navigation("Entries");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.PostingRule", b =>
+                {
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("Ledger.Domain.Transaction", b =>

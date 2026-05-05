@@ -22,21 +22,25 @@ public class WithdrawalsController : ControllerBase
     }
 
     public record CreateWithdrawalRequest(
-        Guid CustomerId, string CustomerIban, string CustomerName,
-        decimal Amount, SepaType SepaType);
+        Guid CustomerId,
+        string CustomerIban,
+        string CustomerName,
+        decimal Amount,
+        SepaType SepaType);
 
     public record WithdrawalResponse(Guid TransactionId, TransactionStatus Status);
 
     [HttpPost]
-    public async Task<ActionResult<WithdrawalResponse>> Create([FromBody] CreateWithdrawalRequest request, CancellationToken ct)
+    public async Task<ActionResult<WithdrawalResponse>> Create([FromBody] CreateWithdrawalRequest request,
+        CancellationToken ct)
     {
         if (request.Amount <= 0) return BadRequest("Amount must be positive.");
 
         var tx = NewWithdrawal(request);
         _db.Transactions.Add(tx);
 
-        _posting.RaiseEvent(tx, EventTypes.WithdrawalInitiated,
-            new { request.CustomerIban, request.CustomerName });
+        await _posting.RaiseEventAsync(tx, EventTypes.WithdrawalInitiated,
+            new { request.CustomerIban, request.CustomerName }, ct);
 
         await _db.SaveChangesAsync(ct);
 
@@ -47,7 +51,8 @@ public class WithdrawalsController : ControllerBase
     public record CreateFaultyWithdrawalRequest(Guid CustomerId, decimal Amount, SepaType SepaType);
 
     [HttpPost("faulty")]
-    public async Task<ActionResult<WithdrawalResponse>> CreateFaulty([FromBody] CreateFaultyWithdrawalRequest request, CancellationToken ct)
+    public async Task<ActionResult<WithdrawalResponse>> CreateFaulty([FromBody] CreateFaultyWithdrawalRequest request,
+        CancellationToken ct)
     {
         if (request.Amount <= 0) return BadRequest("Amount must be positive.");
 
@@ -66,7 +71,7 @@ public class WithdrawalsController : ControllerBase
         tx.ExternalRef = tx.Id.ToString();
 
         _db.Transactions.Add(tx);
-        _posting.RaiseEvent(tx, EventTypes.WithdrawalInitiated, new { faulty = true });
+        await _posting.RaiseEventAsync(tx, EventTypes.WithdrawalInitiated, new { faulty = true }, ct);
         await _db.SaveChangesAsync(ct);
 
         // DELIBERATELY no SubmitWithdrawal — simulates a crash

@@ -23,7 +23,7 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
 
 builder.Services.AddSingleton<IMockBank, MockBank>();
 builder.Services.AddSingleton<ICustomerRegistry, CustomerRegistry>();
-builder.Services.AddSingleton<IPostingEngine, PostingEngine>();
+builder.Services.AddScoped<IPostingEngine, PostingEngine>();
 
 builder.Services.AddHostedService<BankStatementPollingJob>();
 builder.Services.AddHostedService<SuspenseAgingMonitor>();
@@ -35,6 +35,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<LedgerDbContext>();
     await ChartOfAccountsSeeder.SeedAsync(db);
+    await PostingRulesSeeder.SeedAsync(db);
 }
 
 // Configure the HTTP request pipeline.

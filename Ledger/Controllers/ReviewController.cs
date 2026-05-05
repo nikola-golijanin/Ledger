@@ -44,7 +44,7 @@ public class ReviewController : ControllerBase
             return BadRequest("Unknown customer.");
 
         tx.CustomerId = request.CustomerId;
-        _posting.RaiseEvent(tx, EventTypes.DepositReviewApproved, new { request.ReviewedBy });
+        await _posting.RaiseEventAsync(tx, EventTypes.DepositReviewApproved, new { request.ReviewedBy }, ct);
 
         tx.Status = TransactionStatus.Settled;
         tx.ReviewedAt = DateTime.UtcNow;
@@ -66,7 +66,7 @@ public class ReviewController : ControllerBase
         if (tx.Type != TransactionType.Deposit || tx.ReviewReason is null || tx.Status != TransactionStatus.Processing)
             return BadRequest("Transaction is not a deposit awaiting review.");
 
-        _posting.RaiseEvent(tx, EventTypes.BounceInitiated, new { request.ReviewedBy });
+        await _posting.RaiseEventAsync(tx, EventTypes.BounceInitiated, new { request.ReviewedBy }, ct);
 
         tx.ReviewedAt = DateTime.UtcNow;
         tx.ReviewedBy = request.ReviewedBy;
