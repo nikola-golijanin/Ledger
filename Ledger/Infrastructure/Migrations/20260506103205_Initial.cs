@@ -4,7 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Ledger.Data.Migrations
+namespace Ledger.Infrastructure.Migrations
 {
     /// <inheritdoc />
     public partial class Initial : Migration
@@ -46,6 +46,10 @@ namespace Ledger.Data.Migrations
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     event_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    version = table.Column<int>(type: "integer", nullable: false),
+                    is_active = table.Column<bool>(type: "boolean", nullable: false),
+                    effective_from = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    effective_until = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     description = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
@@ -120,6 +124,7 @@ namespace Ledger.Data.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     transaction_id = table.Column<Guid>(type: "uuid", nullable: false),
                     event_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    posting_rule_id = table.Column<Guid>(type: "uuid", nullable: false),
                     occurred_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     payload = table.Column<string>(type: "jsonb", nullable: true)
@@ -127,6 +132,13 @@ namespace Ledger.Data.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_accounting_events", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_accounting_events_posting_rules_posting_rule_id",
+                        column: x => x.posting_rule_id,
+                        principalSchema: "ledger",
+                        principalTable: "posting_rules",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "FK_accounting_events_transactions_transaction_id",
                         column: x => x.transaction_id,
@@ -184,6 +196,12 @@ namespace Ledger.Data.Migrations
                 schema: "ledger",
                 table: "accounting_events",
                 column: "event_type");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_accounting_events_posting_rule_id",
+                schema: "ledger",
+                table: "accounting_events",
+                column: "posting_rule_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_accounting_events_transaction_id",
@@ -249,11 +267,19 @@ namespace Ledger.Data.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_posting_rules_event_type",
+                name: "IX_posting_rules_event_type_version",
+                schema: "ledger",
+                table: "posting_rules",
+                columns: new[] { "event_type", "version" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ux_posting_rules_active_per_event",
                 schema: "ledger",
                 table: "posting_rules",
                 column: "event_type",
-                unique: true);
+                unique: true,
+                filter: "is_active = true");
 
             migrationBuilder.CreateIndex(
                 name: "IX_transactions_customer_id",

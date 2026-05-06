@@ -70,61 +70,48 @@ public static class PostingRulesSeeder
             ]),
     ];
 
+    /// <summary>
+    /// Seeds v1 active rules for any event type that has no rule yet.
+    /// Does NOT modify existing rules — new versions go through admin endpoints (later).
+    /// </summary>
     public static async Task SeedAsync(LedgerDbContext db, CancellationToken ct = default)
     {
+        var now = DateTime.UtcNow;
+
         foreach (var seed in Seeds)
         {
-            var existing = await db.PostingRules
-                .Include(r => r.Lines)
-                .FirstOrDefaultAsync(r => r.EventType == seed.EventType, ct);
+            var anyExisting = await db.PostingRules
+                .AnyAsync(r => r.EventType == seed.EventType, ct);
 
-            if (existing is null)
+            if (anyExisting) continue;
+
+            var rule = new PostingRule
             {
-                var rule = new PostingRule
+                Id = Guid.NewGuid(),
+                EventType = seed.EventType,
+                Version = 1,
+                IsActive = true,
+                EffectiveFrom = now,
+                EffectiveUntil = null,
+                Description = seed.Description,
+                CreatedAt = now,
+            };
+
+            for (var i = 0; i < seed.Lines.Length; i++)
+            {
+                var line = seed.Lines[i];
+                rule.Lines.Add(new PostingRuleLine
                 {
                     Id = Guid.NewGuid(),
-                    EventType = seed.EventType,
-                    Description = seed.Description,
-                    CreatedAt = DateTime.UtcNow,
-                };
-
-                for (var i = 0; i < seed.Lines.Length; i++)
-                {
-                    var line = seed.Lines[i];
-                    rule.Lines.Add(new PostingRuleLine
-                    {
-                        Id = Guid.NewGuid(),
-                        PostingRuleId = rule.Id,
-                        Sequence = i,
-                        AccountNumber = line.AccountNumber,
-                        Direction = line.Direction,
-                        CarriesCustomerId = line.CarriesCustomerId,
-                    });
-                }
-
-                db.PostingRules.Add(rule);
+                    PostingRuleId = rule.Id,
+                    Sequence = i,
+                    AccountNumber = line.AccountNumber,
+                    Direction = line.Direction,
+                    CarriesCustomerId = line.CarriesCustomerId,
+                });
             }
-            else
-            {
-                // Idempotent update — replace description and lines wholesale
-                existing.Description = seed.Description;
 
-                db.PostingRuleLines.RemoveRange(existing.Lines);
-
-                for (var i = 0; i < seed.Lines.Length; i++)
-                {
-                    var line = seed.Lines[i];
-                    existing.Lines.Add(new PostingRuleLine
-                    {
-                        Id = Guid.NewGuid(),
-                        PostingRuleId = existing.Id,
-                        Sequence = i,
-                        AccountNumber = line.AccountNumber,
-                        Direction = line.Direction,
-                        CarriesCustomerId = line.CarriesCustomerId,
-                    });
-                }
-            }
+            db.PostingRules.Add(rule);
         }
 
         await db.SaveChangesAsync(ct);

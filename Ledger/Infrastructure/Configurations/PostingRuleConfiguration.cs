@@ -18,6 +18,21 @@ public class PostingRuleConfiguration : IEntityTypeConfiguration<PostingRule>
             .HasMaxLength(64)
             .IsRequired();
 
+        builder.Property(r => r.Version)
+            .HasColumnName("version")
+            .IsRequired();
+
+        builder.Property(r => r.IsActive)
+            .HasColumnName("is_active")
+            .IsRequired();
+
+        builder.Property(r => r.EffectiveFrom)
+            .HasColumnName("effective_from")
+            .IsRequired();
+
+        builder.Property(r => r.EffectiveUntil)
+            .HasColumnName("effective_until");
+
         builder.Property(r => r.Description)
             .HasColumnName("description")
             .HasMaxLength(256);
@@ -31,6 +46,13 @@ public class PostingRuleConfiguration : IEntityTypeConfiguration<PostingRule>
             .HasForeignKey(l => l.PostingRuleId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.HasIndex(r => r.EventType).IsUnique();
+        // (event_type, version) is unique
+        builder.HasIndex(r => new { r.EventType, r.Version }).IsUnique();
+
+        // At most one active row per event_type — enforced via partial unique index
+        builder.HasIndex(r => r.EventType)
+            .IsUnique()
+            .HasFilter("is_active = true")
+            .HasDatabaseName("ux_posting_rules_active_per_event");
     }
 }

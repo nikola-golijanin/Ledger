@@ -76,3 +76,41 @@ Content-Type: application/json
 }
 
 ###
+
+
+# curl -X POST http://localhost:5000/api/testing/inject-deposit 
+#  -H "Content-Type: application/json" 
+#  -d '{
+#    "customerIban": "DE89370400440532013000",
+#    "customerName": "Alice Muller",
+#    "amount": 100.00
+#  }'
+POST http://localhost:5144/api/testing/inject-deposit
+Content-Type: application/json
+
+{
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Muller",
+  "amount": 100.00
+}
+
+###
+
+
+# curl -X POST http://localhost:5000/api/testing/inject-deposit 
+#  -H "Content-Type: application/json" 
+#  -d '{
+#    "customerIban": "DE89370400440532013000",
+#    "customerName": "Alice Muller",
+#    "amount": 50.00
+#  }'
+POST http://localhost:5144/api/testing/inject-deposit
+Content-Type: application/json
+
+{
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Muller",
+  "amount": 50.00
+}
+
+###

@@ -3,20 +3,17 @@ using System;
 using Ledger.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Ledger.Data.Migrations
+namespace Ledger.Infrastructure.Migrations
 {
     [DbContext(typeof(LedgerDbContext))]
-    [Migration("20260505220854_Initial")]
-    partial class Initial
+    partial class LedgerDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -92,6 +89,10 @@ namespace Ledger.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("payload");
 
+                    b.Property<Guid>("PostingRuleId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("posting_rule_id");
+
                     b.Property<Guid>("TransactionId")
                         .HasColumnType("uuid")
                         .HasColumnName("transaction_id");
@@ -99,6 +100,8 @@ namespace Ledger.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("EventType");
+
+                    b.HasIndex("PostingRuleId");
 
                     b.HasIndex("TransactionId");
 
@@ -177,15 +180,36 @@ namespace Ledger.Data.Migrations
                         .HasColumnType("character varying(256)")
                         .HasColumnName("description");
 
+                    b.Property<DateTime>("EffectiveFrom")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_from");
+
+                    b.Property<DateTime?>("EffectiveUntil")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("effective_until");
+
                     b.Property<string>("EventType")
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
                         .HasColumnName("event_type");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EventType")
+                        .IsUnique()
+                        .HasDatabaseName("ux_posting_rules_active_per_event")
+                        .HasFilter("is_active = true");
+
+                    b.HasIndex("EventType", "Version")
                         .IsUnique();
 
                     b.ToTable("posting_rules", "ledger");
@@ -331,11 +355,19 @@ namespace Ledger.Data.Migrations
 
             modelBuilder.Entity("Ledger.Domain.AccountingEvent", b =>
                 {
+                    b.HasOne("Ledger.Domain.PostingRule", "PostingRule")
+                        .WithMany()
+                        .HasForeignKey("PostingRuleId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Ledger.Domain.Transaction", "Transaction")
                         .WithMany("Events")
                         .HasForeignKey("TransactionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("PostingRule");
 
                     b.Navigation("Transaction");
                 });

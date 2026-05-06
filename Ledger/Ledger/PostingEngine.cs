@@ -29,10 +29,12 @@ public class PostingEngine : IPostingEngine
         object? payload = null,
         CancellationToken ct = default)
     {
+        // Look up the ACTIVE rule for this event type
         var rule = await _db.PostingRules
-            .Include(r => r.Lines.OrderBy(l => l.Sequence))
-            .FirstOrDefaultAsync(r => r.EventType == eventType, ct)
-            ?? throw new InvalidOperationException($"No posting rule for event type '{eventType}'");
+                       .Include(r => r.Lines.OrderBy(l => l.Sequence))
+                       .FirstOrDefaultAsync(r => r.EventType == eventType && r.IsActive, ct)
+                   ?? throw new InvalidOperationException(
+                       $"No active posting rule for event type '{eventType}'");
 
         var now = DateTime.UtcNow;
 
@@ -41,6 +43,7 @@ public class PostingEngine : IPostingEngine
             Id = Guid.NewGuid(),
             TransactionId = tx.Id,
             EventType = eventType,
+            PostingRuleId = rule.Id,
             OccurredAt = now,
             CreatedAt = now,
             PayloadJson = payload is null

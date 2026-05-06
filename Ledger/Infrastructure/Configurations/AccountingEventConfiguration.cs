@@ -9,11 +9,13 @@ public class AccountingEventConfiguration : IEntityTypeConfiguration<AccountingE
     public void Configure(EntityTypeBuilder<AccountingEvent> builder)
     {
         builder.ToTable("accounting_events");
+
         builder.HasKey(e => e.Id);
         builder.Property(e => e.Id).HasColumnName("id").ValueGeneratedNever();
 
         builder.Property(e => e.TransactionId).HasColumnName("transaction_id").IsRequired();
         builder.Property(e => e.EventType).HasColumnName("event_type").HasMaxLength(64).IsRequired();
+        builder.Property(e => e.PostingRuleId).HasColumnName("posting_rule_id").IsRequired();
         builder.Property(e => e.OccurredAt).HasColumnName("occurred_at").IsRequired();
         builder.Property(e => e.CreatedAt).HasColumnName("created_at").IsRequired();
         builder.Property(e => e.PayloadJson).HasColumnName("payload").HasColumnType("jsonb");
@@ -23,7 +25,13 @@ public class AccountingEventConfiguration : IEntityTypeConfiguration<AccountingE
             .HasForeignKey(je => je.EventId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        builder.HasOne(e => e.PostingRule)
+            .WithMany()
+            .HasForeignKey(e => e.PostingRuleId)
+            .OnDelete(DeleteBehavior.Restrict);
+
         builder.HasIndex(e => e.TransactionId);
         builder.HasIndex(e => e.EventType);
+        builder.HasIndex(e => e.PostingRuleId);
     }
 }
