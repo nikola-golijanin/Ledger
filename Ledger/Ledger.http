@@ -114,3 +114,34 @@ Content-Type: application/json
 }
 
 ###
+
+
+# curl -X POST http://localhost:5000/api/admin/posting-rules 
+#  -H "Content-Type: application/json" 
+#  -d '{
+#    "eventType": "deposit.detected.clean_match",
+#    "lines": [
+#      { "accountNumber": 1110, "direction": 1, "carriesCustomerId": false },
+#      { "accountNumber": 2110, "direction": 1, "carriesCustomerId": true }
+#    ]
+#  }'
+POST http://localhost:5000/api/admin/posting-rules
+Content-Type: application/json
+
+{
+  "eventType": "deposit.detected.clean_match",
+  "lines": [
+    {
+      "accountNumber": 1110,
+      "direction": 1,
+      "carriesCustomerId": false
+    },
+    {
+      "accountNumber": 2110,
+      "direction": 1,
+      "carriesCustomerId": true
+    }
+  ]
+}
+
+###

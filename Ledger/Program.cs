@@ -24,6 +24,7 @@ builder.Services.AddDbContext<LedgerDbContext>(options =>
 builder.Services.AddSingleton<IMockBank, MockBank>();
 builder.Services.AddSingleton<ICustomerRegistry, CustomerRegistry>();
 builder.Services.AddScoped<IPostingEngine, PostingEngine>();
+builder.Services.AddScoped<PostingRuleValidator>();
 
 builder.Services.AddHostedService<BankStatementPollingJob>();
 builder.Services.AddHostedService<SuspenseAgingMonitor>();
