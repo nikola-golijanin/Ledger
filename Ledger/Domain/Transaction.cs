@@ -18,6 +18,13 @@ public class Transaction
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewedBy { get; set; }
 
+    // Correction-specific (nullable on non-correction transactions)
+    public string? CorrectionReason { get; set; }
+    public string? CorrectionDescription { get; set; }
+    public string? RequestedBy { get; set; }
+    public Guid? CorrectsTransactionId { get; set; }
+    public string? IdempotencyKey { get; set; }
+
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 

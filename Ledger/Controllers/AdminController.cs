@@ -11,12 +11,20 @@ namespace Ledger.Controllers;
 public class AdminController : ControllerBase
 {
     private readonly LedgerDbContext _db;
-    private readonly PostingRuleValidator _validator;
+    private readonly PostingRuleValidator _ruleValidator;
+    
+    private readonly CorrectionValidator _correctionValidator;
+    private readonly ICorrectionService _correctionService;
 
-    public AdminController(LedgerDbContext db, PostingRuleValidator validator)
+    public AdminController(LedgerDbContext db,
+        PostingRuleValidator ruleValidator,
+        CorrectionValidator correctionValidator,
+        ICorrectionService correctionService)
     {
         _db = db;
-        _validator = validator;
+        _ruleValidator = ruleValidator;
+        _correctionValidator = correctionValidator;
+        _correctionService = correctionService;
     }
 
  public record CreateNewRuleVersionRequest(
@@ -34,7 +42,7 @@ public class AdminController : ControllerBase
         string EventType,
         int Version);
 
-    [HttpPost]
+    [HttpPost("posting-rules")]
     public async Task<IActionResult> PostNewVersion(
         [FromBody] CreateNewRuleVersionRequest request,
         CancellationToken ct)
@@ -44,7 +52,7 @@ public class AdminController : ControllerBase
             .Select(l => new RuleLineSpec(l.AccountNumber, l.Direction, l.CarriesCustomerId))
             .ToList();
 
-        var validation = await _validator.ValidateAsync(request.EventType, lineSpecs, ct);
+        var validation = await _ruleValidator.ValidateAsync(request.EventType, lineSpecs, ct);
         if (!validation.IsValid)
             return BadRequest(new { errors = validation.Errors });
 
@@ -96,5 +104,54 @@ public class AdminController : ControllerBase
         await dbTx.CommitAsync(ct);
 
         return Ok(new CreateNewRuleVersionResponse(newRule.Id, newRule.EventType, newRule.Version));
+    }
+    
+    
+    public record PostCorrectionApiRequest(
+        string Reason,
+        string Description,
+        string RequestedBy,
+        string Currency,
+        Guid? CorrectsTransactionId,
+        string? IdempotencyKey,
+        IReadOnlyList<CorrectionLineDto> Lines);
+
+    public record CorrectionLineDto(
+        int AccountNumber,
+        short Direction,
+        decimal Amount,
+        Guid? CustomerId);
+    
+    [HttpPost("corrections")]
+    public async Task<IActionResult> Post(
+        [FromBody] PostCorrectionApiRequest request,
+        CancellationToken ct)
+    {
+        var lineSpecs = request.Lines?
+            .Select(l => new CorrectionLineSpec(l.AccountNumber, l.Direction, l.Amount, l.CustomerId))
+            .ToList();
+
+        var validation = await _correctionValidator.ValidateAsync(
+            request.Reason,
+            request.Description,
+            request.RequestedBy,
+            request.Currency,
+            request.CorrectsTransactionId,
+            lineSpecs,
+            ct);
+
+        if (!validation.IsValid)
+            return BadRequest(new { errors = validation.Errors });
+
+        var result = await _correctionService.PostAsync(new PostCorrectionRequest(
+            request.Reason,
+            request.Description,
+            request.RequestedBy,
+            request.Currency,
+            request.CorrectsTransactionId,
+            request.IdempotencyKey,
+            lineSpecs!), ct);
+
+        return Ok(result);
     }
 }

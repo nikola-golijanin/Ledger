@@ -89,7 +89,7 @@ namespace Ledger.Infrastructure.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("payload");
 
-                    b.Property<Guid>("PostingRuleId")
+                    b.Property<Guid?>("PostingRuleId")
                         .HasColumnType("uuid")
                         .HasColumnName("posting_rule_id");
 
@@ -267,6 +267,20 @@ namespace Ledger.Infrastructure.Migrations
                         .HasColumnType("numeric(19,4)")
                         .HasColumnName("amount");
 
+                    b.Property<string>("CorrectionDescription")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("correction_description");
+
+                    b.Property<string>("CorrectionReason")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("correction_reason");
+
+                    b.Property<Guid?>("CorrectsTransactionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("corrects_transaction_id");
+
                     b.Property<string>("CounterpartyIban")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)")
@@ -296,6 +310,16 @@ namespace Ledger.Infrastructure.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)")
                         .HasColumnName("external_ref");
+
+                    b.Property<string>("IdempotencyKey")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("idempotency_key");
+
+                    b.Property<string>("RequestedBy")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("requested_by");
 
                     b.Property<string>("ReviewReason")
                         .HasMaxLength(32)
@@ -334,9 +358,16 @@ namespace Ledger.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CorrectsTransactionId");
+
                     b.HasIndex("CustomerId");
 
                     b.HasIndex("ExternalRef");
+
+                    b.HasIndex("IdempotencyKey")
+                        .IsUnique()
+                        .HasDatabaseName("ux_transactions_idempotency_key")
+                        .HasFilter("idempotency_key IS NOT NULL");
 
                     b.HasIndex("Status");
 
@@ -358,8 +389,7 @@ namespace Ledger.Infrastructure.Migrations
                     b.HasOne("Ledger.Domain.PostingRule", "PostingRule")
                         .WithMany()
                         .HasForeignKey("PostingRuleId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Ledger.Domain.Transaction", "Transaction")
                         .WithMany("Events")
@@ -416,6 +446,14 @@ namespace Ledger.Infrastructure.Migrations
                     b.Navigation("Account");
 
                     b.Navigation("PostingRule");
+                });
+
+            modelBuilder.Entity("Ledger.Domain.Transaction", b =>
+                {
+                    b.HasOne("Ledger.Domain.Transaction", null)
+                        .WithMany()
+                        .HasForeignKey("CorrectsTransactionId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Ledger.Domain.AccountingEvent", b =>

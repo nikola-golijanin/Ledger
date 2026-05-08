@@ -25,6 +25,8 @@ builder.Services.AddSingleton<IMockBank, MockBank>();
 builder.Services.AddSingleton<ICustomerRegistry, CustomerRegistry>();
 builder.Services.AddScoped<IPostingEngine, PostingEngine>();
 builder.Services.AddScoped<PostingRuleValidator>();
+builder.Services.AddScoped<CorrectionValidator>();
+builder.Services.AddScoped<ICorrectionService, CorrectionService>();
 
 builder.Services.AddHostedService<BankStatementPollingJob>();
 builder.Services.AddHostedService<SuspenseAgingMonitor>();

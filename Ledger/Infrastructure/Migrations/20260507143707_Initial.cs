@@ -76,12 +76,24 @@ namespace Ledger.Infrastructure.Migrations
                     review_reason = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: true),
                     reviewed_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     reviewed_by = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    correction_reason = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true),
+                    correction_description = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: true),
+                    requested_by = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
+                    corrects_transaction_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    idempotency_key = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_transactions", x => x.id);
+                    table.ForeignKey(
+                        name: "FK_transactions_transactions_corrects_transaction_id",
+                        column: x => x.corrects_transaction_id,
+                        principalSchema: "ledger",
+                        principalTable: "transactions",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -124,7 +136,7 @@ namespace Ledger.Infrastructure.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     transaction_id = table.Column<Guid>(type: "uuid", nullable: false),
                     event_type = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    posting_rule_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    posting_rule_id = table.Column<Guid>(type: "uuid", nullable: true),
                     occurred_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     payload = table.Column<string>(type: "jsonb", nullable: true)
@@ -282,6 +294,12 @@ namespace Ledger.Infrastructure.Migrations
                 filter: "is_active = true");
 
             migrationBuilder.CreateIndex(
+                name: "IX_transactions_corrects_transaction_id",
+                schema: "ledger",
+                table: "transactions",
+                column: "corrects_transaction_id");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_transactions_customer_id",
                 schema: "ledger",
                 table: "transactions",
@@ -298,6 +316,14 @@ namespace Ledger.Infrastructure.Migrations
                 schema: "ledger",
                 table: "transactions",
                 column: "status");
+
+            migrationBuilder.CreateIndex(
+                name: "ux_transactions_idempotency_key",
+                schema: "ledger",
+                table: "transactions",
+                column: "idempotency_key",
+                unique: true,
+                filter: "idempotency_key IS NOT NULL");
         }
 
         /// <inheritdoc />

@@ -43,5 +43,36 @@ public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.CustomerId);
         builder.HasIndex(t => t.ExternalRef);
+        
+        builder.Property(t => t.CorrectionReason)
+            .HasColumnName("correction_reason")
+            .HasMaxLength(64);
+
+        builder.Property(t => t.CorrectionDescription)
+            .HasColumnName("correction_description")
+            .HasMaxLength(1024);
+
+        builder.Property(t => t.RequestedBy)
+            .HasColumnName("requested_by")
+            .HasMaxLength(128);
+
+        builder.Property(t => t.CorrectsTransactionId)
+            .HasColumnName("corrects_transaction_id");
+
+        builder.Property(t => t.IdempotencyKey)
+            .HasColumnName("idempotency_key")
+            .HasMaxLength(128);
+
+// Idempotency: unique when not null
+        builder.HasIndex(t => t.IdempotencyKey)
+            .IsUnique()
+            .HasFilter("idempotency_key IS NOT NULL")
+            .HasDatabaseName("ux_transactions_idempotency_key");
+
+// Optional self-FK to the original transaction being corrected
+        builder.HasOne<Transaction>()
+            .WithMany()
+            .HasForeignKey(t => t.CorrectsTransactionId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

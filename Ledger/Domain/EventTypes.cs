@@ -12,4 +12,6 @@ public static class EventTypes
     public const string WithdrawalSettled             = "withdrawal.settled";
     public const string BounceInitiated               = "bounce.initiated";
     public const string BounceSettled                 = "bounce.settled";
+    
+    public const string ManualCorrectionPosted        = "manual.correction.posted";
 }
