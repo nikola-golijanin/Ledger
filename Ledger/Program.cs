@@ -27,6 +27,7 @@ builder.Services.AddScoped<IPostingEngine, PostingEngine>();
 builder.Services.AddScoped<PostingRuleValidator>();
 builder.Services.AddScoped<CorrectionValidator>();
 builder.Services.AddScoped<ICorrectionService, CorrectionService>();
+builder.Services.AddScoped<IPostingRuleDiffService, PostingRuleDiffService>();
 
 builder.Services.AddHostedService<BankStatementPollingJob>();
 builder.Services.AddHostedService<SuspenseAgingMonitor>();

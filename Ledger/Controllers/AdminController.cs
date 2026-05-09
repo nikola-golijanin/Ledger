@@ -154,4 +154,23 @@ public class AdminController : ControllerBase
 
         return Ok(result);
     }
+    
+    [HttpGet("posting-rules/diff/{eventType}")]
+    public async Task<IActionResult> DiffPostingRule(
+        string eventType,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromServices] IPostingRuleDiffService diffService,
+        CancellationToken ct)
+    {
+        try
+        {
+            var report = await diffService.DiffAsync(eventType, from, to, ct);
+            return Ok(report);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return NotFound(new { error = ex.Message });
+        }
+    }
 }

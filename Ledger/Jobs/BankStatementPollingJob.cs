@@ -48,7 +48,8 @@ public class BankStatementPollingJob : BackgroundService
     private async Task PollOnce(CancellationToken ct)
     {
         var entries = _bank.GetUnprocessed();
-        if (entries.Count == 0) return;
+        if (entries.Count == 0)
+            return;
 
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<LedgerDbContext>();
