@@ -47,6 +47,11 @@ public class MockBank : IMockBank
             if (entry is not null) entry.Processed = true;
         }
     }
+    
+    public void Clear()
+    {
+        lock (_lock) _statement.Clear();
+    }
 
     private void AppendOutgoing(string iban, string name, decimal amount, string reference)
     {
@@ -93,6 +98,11 @@ public interface IMockBank
     /// Marks an entry as processed so we won't ingest it again.
     /// </summary>
     void MarkProcessed(Guid entryId);
+
+    /// <summary>
+    /// Clears the in-memory statement.
+    /// </summary>
+    void Clear();
 }
 
 public enum StatementDirection

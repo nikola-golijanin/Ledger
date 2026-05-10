@@ -1,0 +1,35 @@
+### Step 1 — reset to clean state
+POST https://localhost:7100/api/testing/reset
+
+### Step 2 — inject the deposit. Alice's IBAN is on file in the registry.
+POST https://localhost:7100/api/testing/inject-deposit
+Content-Type: application/json
+
+{
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Muller",
+  "amount": 100.00
+}
+
+### Step 3 — wait ~5 seconds for the polling job to ingest
+
+### Step 4 — verify in psql:
+# SELECT t.type, t.status, t.amount, t.customer_id, t.created_at
+# FROM ledger.transactions t ORDER BY t.created_at DESC LIMIT 1;
+#
+# SELECT ae.event_type, pr.version
+# FROM ledger.accounting_events ae
+# LEFT JOIN ledger.posting_rules pr ON pr.id = ae.posting_rule_id
+# ORDER BY ae.occurred_at DESC LIMIT 1;
+#
+# Expected: type=Deposit, status=Settled, amount=100, customer_id=Alice's id
+# Event type: deposit.detected.clean_match, rule version: 1
+#
+# SELECT a.code, je.direction, je.amount, je.customer_id
+# FROM ledger.journal_entries je
+# JOIN ledger.accounts a ON a.number = je.account_number
+# ORDER BY je.id DESC LIMIT 2;
+#
+# Expected:
+#   bank.pooling   +1 100.00 (no customer_id)
+#   customer.viban -1 100.00 (Alice's id)

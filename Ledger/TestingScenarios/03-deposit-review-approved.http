@@ -1,0 +1,68 @@
+### Step 1 — clean state
+POST https://localhost:7100/api/testing/reset
+
+### Step 2 — inject a deposit that will need review (IBAN mismatch)
+POST https://localhost:7100/api/testing/inject-deposit-for-review
+Content-Type: application/json
+
+{
+  "counterpartyIban": "DE99999999999999999999",
+  "counterpartyName": "Mystery Sender",
+  "amount": 200.00,
+  "reason": 1
+}
+
+###
+
+### Step 3 — wait ~5 seconds for polling job to ingest
+
+### Step 4 — find the transaction in review
+# SELECT id, status, amount, review_reason, customer_id
+# FROM ledger.transactions
+# WHERE status = 'Processing' AND review_reason IS NOT NULL
+# ORDER BY created_at DESC LIMIT 1;
+#
+# Note the id — let's call it $TX_ID
+
+### Step 5 — at this point books are:
+# SELECT
+#    a.number,
+#    a.code,
+#    a.type,
+#    COALESCE(SUM(je.direction * je.amount), 0) AS signed_balance,
+#    CASE
+#    WHEN a.type IN ('Asset', 'Expense')               THEN  COALESCE(SUM(je.direction * je.amount), 0)
+#    WHEN a.type IN ('Liability', 'Equity', 'Revenue') THEN -COALESCE(SUM(je.direction * je.amount), 0)
+#    END AS natural_balance
+# FROM ledger.accounts a
+# LEFT JOIN ledger.journal_entries je ON je.account_number = a.number
+# WHERE a.is_postable = true
+# GROUP BY a.number, a.code, a.type
+# ORDER BY a.number;
+# Verify with the balance query from LEDGER.md
+
+### Step 6 — ops approves and assigns to Alice
+POST https://localhost:7100/api/reviews/6c2e022e-92cd-4e18-8d84-cb371d0bc45b/approve
+Content-Type: application/json
+
+{
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "reviewedBy": "ops@broker"
+}
+
+### Step 7 — verify in psql:
+# SELECT ae.event_type, je.direction, a.code, je.amount, je.customer_id
+# FROM ledger.accounting_events ae
+# JOIN ledger.journal_entries je ON je.event_id = ae.id
+# JOIN ledger.accounts a ON a.number = je.account_number
+# WHERE ae.transaction_id = '$TX_ID'
+# ORDER BY ae.occurred_at, je.id;
+#
+# Expected: 4 entries across 2 events.
+# Event 1 (deposit.detected.requires_review): pooling +200, review -200
+# Event 2 (deposit.review.approved): review +200, customer.viban -200 (for Alice)
+#
+# Final balances:
+#   bank.pooling = 200
+#   customer.viban (Alice) = 200
+#   suspense.deposit.review = 0

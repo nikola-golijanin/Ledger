@@ -1,0 +1,15 @@
+### Reset the system to a clean state
+POST https://localhost:7100/api/testing/reset
+
+# Verify journal is empty
+# Run this in psql:
+# SELECT COUNT(*) FROM ledger.journal_entries;
+# SELECT COUNT(*) FROM ledger.transactions;
+# SELECT COUNT(*) FROM ledger.accounting_events;
+# Expected: 0
+
+# Verify accounts and rules are still seeded
+# SELECT COUNT(*) FROM ledger.accounts;        -- expected: 22
+# SELECT COUNT(*) FROM ledger.posting_rules;   -- expected: 7
+
+

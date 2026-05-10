@@ -48,35 +48,7 @@ public class WithdrawalsController : ControllerBase
         return Ok(new WithdrawalResponse(tx.Id, tx.Status));
     }
 
-    public record CreateFaultyWithdrawalRequest(Guid CustomerId, decimal Amount, SepaType SepaType);
-
-    [HttpPost("faulty")]
-    public async Task<ActionResult<WithdrawalResponse>> CreateFaulty([FromBody] CreateFaultyWithdrawalRequest request,
-        CancellationToken ct)
-    {
-        if (request.Amount <= 0) return BadRequest("Amount must be positive.");
-
-        var tx = new Transaction
-        {
-            Id = Guid.NewGuid(),
-            Type = TransactionType.Withdrawal,
-            Status = TransactionStatus.Processing,
-            CustomerId = request.CustomerId,
-            Amount = request.Amount,
-            Currency = "EUR",
-            SepaType = request.SepaType,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-        };
-        tx.ExternalRef = tx.Id.ToString();
-
-        _db.Transactions.Add(tx);
-        await _posting.RaiseEventAsync(tx, EventTypes.WithdrawalInitiated, new { faulty = true }, ct);
-        await _db.SaveChangesAsync(ct);
-
-        // DELIBERATELY no SubmitWithdrawal — simulates a crash
-        return Ok(new WithdrawalResponse(tx.Id, tx.Status));
-    }
+    
 
     private static Transaction NewWithdrawal(CreateWithdrawalRequest req)
     {

@@ -1,0 +1,58 @@
+### Step 1 — clean state
+POST https://localhost:7100/api/testing/reset
+
+### Step 2 — inject deposit that needs review
+POST https://localhost:7100/api/testing/inject-deposit-for-review
+Content-Type: application/json
+
+{
+  "counterpartyIban": "DE99999999999999999999",
+  "counterpartyName": "Mystery Sender",
+  "amount": 250.00,
+  "reason": 1
+}
+
+### Step 3 — wait 5 seconds, then find the tx id (it's the latest Processing deposit with review_reason)
+# psql:
+# SELECT id FROM ledger.transactions
+# WHERE status = 'Processing' AND review_reason IS NOT NULL
+# ORDER BY created_at DESC LIMIT 1;
+
+### Step 4 — ops rejects, kicking off the bounce
+POST https://localhost:7100/api/reviews/485105d3-4675-4f69-bf10-1b73167dc346/reject
+Content-Type: application/json
+
+{
+  "reviewedBy": "ops@broker"
+}
+
+### Step 5 — at this moment:
+#   bank.pooling = 250 (still — money hasn't physically left yet)
+#   suspense.deposit.review = 0 (cleared)
+#   suspense.bounce = 250 (in flight)
+# Transaction is still Processing.
+
+### Step 6 — wait ~5 seconds for the polling job to settle the bounce
+
+### Step 7 — verify final state:
+# SELECT t.id, t.status FROM ledger.transactions t WHERE t.id = '$TX_ID';
+# Expected: status = 'Failed'
+#
+# SELECT ae.event_type, ae.occurred_at FROM ledger.accounting_events ae
+# WHERE ae.transaction_id = '$TX_ID' ORDER BY ae.occurred_at;
+# Expected three events:
+#   deposit.detected.requires_review
+#   bounce.initiated
+#   bounce.settled
+#
+# SELECT a.code, -SUM(je.direction * je.amount) AS natural
+# FROM ledger.journal_entries je
+# JOIN ledger.accounts a ON a.number = je.account_number
+# WHERE a.code IN ('bank.pooling', 'suspense.deposit.review', 'suspense.bounce')
+# GROUP BY a.code, a.type;
+#
+# Expected (after flipping liability signs):
+#   bank.pooling = 0
+#   suspense.deposit.review = 0
+#   suspense.bounce = 0
+# All balances back to zero.

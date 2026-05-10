@@ -1,0 +1,68 @@
+### Step 1 — clean state
+POST https://localhost:7100/api/testing/reset
+
+### Step 2 — give Alice some money so she can withdraw
+POST https://localhost:7100/api/testing/inject-deposit
+Content-Type: application/json
+
+{
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Muller",
+  "amount": 200.00
+}
+
+### Wait ~5 seconds for the deposit to settle.
+
+### Step 3 — verify Alice's balance
+# psql:
+# SELECT -SUM(je.direction * je.amount) AS balance
+# FROM ledger.journal_entries je
+# WHERE je.account_number = 2110
+#   AND je.customer_id = '11111111-1111-1111-1111-111111111111';
+# Expected: 200
+
+### Step 4 — Alice withdraws 80 EUR (Instant SEPA)
+POST https://localhost:7100/api/withdrawals
+Content-Type: application/json
+
+{
+  "customerId": "11111111-1111-1111-1111-111111111111",
+  "customerIban": "DE89370400440532013000",
+  "customerName": "Alice Muller",
+  "amount": 80.00,
+  "sepaType": 2
+}
+
+### Step 5 — at this moment (Processing):
+# Note the returned transactionId — let's call it $TX_ID
+#   bank.pooling = 200 (unchanged, money hasn't left yet)
+#   customer.viban (Alice) = 120 (200 - 80)
+#   suspense.withdrawal = 80 (in flight)
+# psql:
+# SELECT a.code,
+#   CASE WHEN a.type IN ('Asset','Expense') THEN SUM(je.direction*je.amount)
+#        ELSE -SUM(je.direction*je.amount) END AS natural
+# FROM ledger.accounts a
+# JOIN ledger.journal_entries je ON je.account_number = a.number
+# WHERE a.code IN ('bank.pooling','customer.viban','suspense.withdrawal')
+# GROUP BY a.code, a.type
+# ORDER BY a.code;
+
+### Step 6 — wait ~5 seconds for the polling job to settle
+
+### Step 7 — verify final state
+# SELECT t.id, t.status FROM ledger.transactions t WHERE t.id = '$TX_ID';
+# Expected: status = 'Settled'
+#
+# SELECT ae.event_type, ae.occurred_at FROM ledger.accounting_events ae
+# WHERE ae.transaction_id = '$TX_ID' ORDER BY ae.occurred_at;
+# Expected: withdrawal.initiated then withdrawal.settled
+#
+# Expected balances after settlement:
+#   bank.pooling = 120 (200 - 80)
+#   customer.viban (Alice) = 120 (unchanged from step 5)
+#   suspense.withdrawal = 0 (cleared)
+#
+# Reconciliation:
+# SELECT SUM(direction * amount) AS drift FROM ledger.journal_entries;
+# Expected: 0
